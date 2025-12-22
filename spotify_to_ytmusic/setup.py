@@ -92,8 +92,12 @@ def setup_reddit():
     }
     settings["reddit"].update(credentials)
     settings.save()
+    from requests import Session
+    session = Session()
+    session.verify = "/etc/ssl/certs/ca-certificates.crt"
     reddit = praw.Reddit(client_id=settings['reddit']['client_id'],
                          client_secret=settings['reddit']['client_secret'],
+                         requestor_kwargs={"session": session},  # pass the custom Session instance
                          redirect_uri='http://localhost:8080',
                          user_agent=agent)
 

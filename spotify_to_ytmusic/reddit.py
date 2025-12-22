@@ -17,11 +17,15 @@ class Reddit:
             print("Please run setup first!")
             sys.exit(1)
 
+        from requests import Session
+        session = Session()
+        session.verify = "/etc/ssl/certs/ca-certificates.crt"
         self.reddit = praw.Reddit(
             client_id=settings["reddit"]["client_id"].strip(),
             client_secret=settings["reddit"]["client_secret"].strip(),
             refresh_token=settings["reddit"]["refresh_token"].strip(),
             user_agent=agent,
+            requestor_kwargs={"session": session},  # pass the custom Session instance
         )
 
     def comment_EDM(self, content, days):

@@ -4,6 +4,7 @@ import re
 from urllib.parse import urlparse
 
 import spotipy
+from requests import Session
 from spotipy import CacheFileHandler
 from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
 
@@ -28,6 +29,9 @@ class Spotify:
         use_oauth = conf.getboolean("use_oauth")
 
         cache_handler = CacheFileHandler(cache_path=CACHE_DIR.joinpath("spotipy.cache").as_posix())
+        session = Session()
+        session.verify = "/etc/ssl/certs/ca-certificates.crt"
+        session.proxies = {"https": "http://gateway.zscloud.net:9480"}
         if use_oauth:
             auth = SpotifyOAuth(
                 client_id=client_id,
@@ -36,13 +40,14 @@ class Spotify:
                 scope="user-library-read",
                 cache_handler=cache_handler,
                 open_browser=has_browser(),
+                requests_session=session,
             )
-            self.api = spotipy.Spotify(auth_manager=auth)
+            self.api = spotipy.Spotify(auth_manager=auth, requests_session=session)
         else:
             client_credentials_manager = SpotifyClientCredentials(
-                client_id=client_id, client_secret=client_secret, cache_handler=cache_handler
+                client_id=client_id, client_secret=client_secret, cache_handler=cache_handler, requests_session=session
             )
-            self.api = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+            self.api = spotipy.Spotify(client_credentials_manager=client_credentials_manager, requests_session=session)
 
     def getSpotifyPlaylist(self, url):
         playlistId = extract_playlist_id_from_url(url)
