@@ -86,6 +86,12 @@ def setup_reddit():
     agent = 'ytmusic playlist app by /u/Sigmatics'
 
     settings = Settings()
+    credentials = {
+        "client_id": input("Paste your client id:"),
+        "client_secret": input("Paste your client secret:"),
+    }
+    settings["reddit"].update(credentials)
+    settings.save()
     reddit = praw.Reddit(client_id=settings['reddit']['client_id'],
                          client_secret=settings['reddit']['client_secret'],
                          redirect_uri='http://localhost:8080',
