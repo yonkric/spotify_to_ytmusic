@@ -1,7 +1,7 @@
 [project]
 name = "spotify_to_ytmusic"
 description = "Transfer Spotify playlists to YouTube Music"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 authors=[{name = "sigma67", email= "sigma67.github@gmail.com"}]
 license={file="LICENSE"}
 classifiers = [
