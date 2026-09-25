@@ -1,0 +1,29 @@
+<form hx-post="/transfer" hx-target="#job-area" hx-swap="innerHTML">
+  <input type="hidden" name="source" value="{{ source }}">
+  <div class="checks">
+    <label><input type="checkbox" name="liked" value="true"> Liked songs</label>
+    <label><input type="checkbox" name="albums" value="true"> Saved albums</label>
+    <label><input type="checkbox" name="artists" value="true"> Followed artists</label>
+  </div>
+
+  <div class="row">
+    <strong>Playlists ({{ playlists|length }})</strong>
+    <label class="muted"><input type="checkbox"
+      onchange="document.querySelectorAll('input[name=playlist_ids]').forEach(c => c.checked = this.checked)"> Select all</label>
+  </div>
+  {% if playlists %}
+    <div class="playlists checks">
+      {% for p in playlists %}
+        <label><input type="checkbox" name="playlist_ids" value="{{ p.id }}"> {{ p.name }}
+          {% if p.count is not none %}<span class="muted">· {{ p.count }}</span>{% endif %}</label>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="muted">No playlists of your own on {{ source_name }}.</p>
+  {% endif %}
+  {% if source == "spotify" %}
+    <p class="muted">Only playlists you own or collaborate on are listed — Spotify no longer shares the songs in other people's playlists.</p>
+  {% endif %}
+  <button>Start transfer</button>
+  <p class="muted">Safe to re-run: it only adds what's missing on the other side.</p>
+</form>

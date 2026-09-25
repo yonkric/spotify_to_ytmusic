@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Spotify ⇄ YouTube Music</h1>
+<p class="sub">Move playlists, liked songs, albums and artists in either direction. Everything stays on this computer.</p>
+
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+<section class="card {% if spotify_user %}connected{% endif %}">
+  <h2><span class="step">1</span> Spotify</h2>
+  {% if spotify_user %}
+    <div class="row">
+      <span>Connected as <strong>{{ spotify_user }}</strong></span>
+      <form method="post" action="/spotify/logout"><button class="secondary">Disconnect</button></form>
+    </div>
+  {% elif client_id %}
+    <div class="row">
+      <a class="button" href="/spotify/login">Connect Spotify</a>
+      <span class="muted">Client ID <code>{{ client_id[:6] }}…</code></span>
+    </div>
+    <details class="muted"><summary>Use a different Client ID</summary>
+      <form method="post" action="/spotify/client-id">
+        <input type="text" name="client_id" placeholder="32-character Client ID" required>
+        <button>Save</button>
+      </form>
+    </details>
+  {% else %}
+    <ol>
+      <li>Open the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Spotify developer dashboard</a> → <strong>Create app</strong> (needs Spotify Premium).</li>
+      <li>Tick <strong>Web API</strong> and add the redirect URI <code>{{ redirect_uri }}</code>.</li>
+      <li>Paste the app's <strong>Client ID</strong> below (no secret needed).</li>
+    </ol>
+    <form method="post" action="/spotify/client-id">
+      <input type="text" name="client_id" placeholder="32-character Client ID" required>
+      <button>Save</button>
+    </form>
+  {% endif %}
+</section>
+
+<section class="card {% if ytm_connected %}connected{% endif %}">
+  <h2><span class="step">2</span> YouTube Music</h2>
+  {% if ytm_connected %}
+    <div class="row">
+      <span>Connected</span>
+      <form method="post" action="/ytm/logout"><button class="secondary">Disconnect</button></form>
+    </div>
+  {% else %}
+    <ol>
+      <li>In Chrome, open <a href="https://music.youtube.com" target="_blank" rel="noopener">music.youtube.com</a> signed in.</li>
+      <li>DevTools (<code>⌥⌘I</code>) → <strong>Network</strong> → filter <code>browse</code> → click around until a request appears.</li>
+      <li>Right-click it → <strong>Copy → Copy as cURL</strong>, and paste below.</li>
+    </ol>
+    <form method="post" action="/ytm/connect">
+      <textarea name="headers" placeholder="curl 'https://music.youtube.com/youtubei/v1/browse?…" required></textarea>
+      <p class="muted">This contains your login cookies. It's saved only on this computer.</p>
+      <button>Connect YouTube Music</button>
+    </form>
+  {% endif %}
+</section>
+
+{% if spotify_user and ytm_connected %}
+<section class="card">
+  <h2><span class="step">3</span> Transfer</h2>
+  <div class="direction" hx-target="#library" hx-swap="innerHTML">
+    <label><input type="radio" name="source" value="spotify" checked
+      hx-get="/library?source=spotify" hx-trigger="change, load" hx-indicator="#loading"> Spotify → YouTube Music</label>
+    <label><input type="radio" name="source" value="ytm"
+      hx-get="/library?source=ytm" hx-trigger="change" hx-indicator="#loading"> YouTube Music → Spotify</label>
+  </div>
+  <span id="loading" class="htmx-indicator muted">Loading your library…</span>
+  <div id="library"></div>
+</section>
+<div id="job-area"></div>
+{% endif %}
+{% endblock %}

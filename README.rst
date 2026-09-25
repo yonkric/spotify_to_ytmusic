@@ -34,8 +34,50 @@ A simple command line script to clone a Spotify playlist to YouTube Music.
 - Remove playlists from YouTube Music
 
 
-Install
--------
+Web UI (both directions)
+------------------------
+
+This fork adds a local web UI that moves your library **in either direction**
+(Spotify → YouTube Music and YouTube Music → Spotify):
+
+- Playlists you own or collaborate on
+- Liked songs
+- Saved albums
+- Followed artists
+
+Re-running a transfer only adds what the other side is missing, and matches are
+cached, so it doubles as a manual sync. Songs that couldn't be matched are listed
+at the end and can be downloaded as a text file.
+
+.. code-block::
+
+    pipx install "spotify_to_ytmusic[web] @ git+https://github.com/yonkric/spotify_to_ytmusic"
+    spotify_to_ytmusic web
+
+Then open http://127.0.0.1:8765 and follow the three steps on the page:
+
+1. **Spotify** – create an app at https://developer.spotify.com/dashboard (requires
+   Spotify Premium), tick *Web API*, add the redirect URI
+   ``http://127.0.0.1:8765/callback/spotify`` and paste the app's Client ID. No client
+   secret is needed (PKCE).
+2. **YouTube Music** – in Chrome, open music.youtube.com while signed in, open DevTools →
+   Network, filter for ``browse``, right-click a request → *Copy → Copy as cURL* and paste it.
+   This contains your login cookies; it is stored only on your computer
+   (in the ``spotify_to_ytmusic/web`` folder of your user cache directory).
+3. **Transfer** – choose a direction, tick what to move and start.
+
+Limitations, imposed by the services rather than this tool:
+
+- Playlist *folders* can't be transferred: Spotify's API doesn't expose them and YouTube
+  Music has no folders.
+- Since February 2026 Spotify only returns the songs of playlists you own or collaborate on,
+  so playlists you merely follow can't be copied.
+- A Spotify development-mode app is limited to 5 users, which is fine for personal use.
+- YouTube Music access uses the unofficial `ytmusicapi <https://github.com/sigma67/ytmusicapi>`_.
+  If your pasted login expires, disconnect and paste a fresh one.
+
+Install (command line)
+----------------------
 
 - Python 3.10 or later - https://www.python.org
 - pipx - https://pipx.pypa.io

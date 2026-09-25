@@ -1,0 +1,28 @@
+<section id="job" class="card" data-job-id="{{ job.id }}"
+  {% if job.status == "running" %}hx-get="/jobs/{{ job.id }}" hx-trigger="every 1s" hx-swap="outerHTML"{% endif %}>
+  <h2>{{ job.direction }}</h2>
+  {% if job.status == "running" %}
+    <p>{{ job.message }}</p>
+    <progress {% if job.total %}value="{{ job.done }}" max="{{ job.total }}"{% endif %}></progress>
+  {% elif job.status == "failed" %}
+    <div class="error">Transfer stopped: {{ job.error }}</div>
+    <p class="muted">Anything already copied is kept, and running it again only adds what's missing.
+      If this is a login error, disconnect and reconnect that account.</p>
+  {% else %}
+    <div class="ok">Done.</div>
+    <table>
+      <tr><th></th><th class="num">Songs/items</th><th class="num">Matched</th><th class="num">Added</th><th class="num">Not found</th></tr>
+      {% for s in job.report %}
+        <tr><td>{{ s.label }}</td><td class="num">{{ s.total }}</td><td class="num">{{ s.matched }}</td>
+            <td class="num">{{ s.added }}</td><td class="num">{{ s.not_found|length }}</td></tr>
+      {% endfor %}
+    </table>
+    {% set missing = job.report|sum(attribute="not_found", start=[]) %}
+    {% if missing %}
+      <details><summary>{{ missing|length }} not found</summary>
+        <ul class="muted">{% for m in missing %}<li>{{ m }}</li>{% endfor %}</ul>
+      </details>
+      <a class="button" href="/jobs/{{ job.id }}/not-found.txt">Download not-found list</a>
+    {% endif %}
+  {% endif %}
+</section>

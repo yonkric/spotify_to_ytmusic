@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spotify ⇄ YouTube Music</title>
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
+  <style>
+    :root {
+      --bg: #f6f6f4; --card: #ffffff; --text: #1c1c1e; --muted: #6b6b70;
+      --line: #e4e4e0; --accent: #1f7a4d; --accent-text: #ffffff;
+      --danger: #b3261e; --danger-bg: #fdecea; --ok-bg: #e7f4ec;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121214; --card: #1c1c1f; --text: #ececee; --muted: #9a9aa2;
+        --line: #2e2e33; --accent: #3fb57a; --accent-text: #0b1a12;
+        --danger: #ff8a80; --danger-bg: #3a1614; --ok-bg: #12301f;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    h2 { font-size: 16px; margin: 0 0 12px; display: flex; gap: 8px; align-items: center; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+            padding: 20px; margin-bottom: 16px; }
+    .step { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+            background: var(--line); font-size: 12px; font-weight: 600; }
+    .connected .step { background: var(--accent); color: var(--accent-text); }
+    ol { padding-left: 20px; margin: 0 0 12px; } li { margin-bottom: 4px; }
+    code { background: var(--line); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+    input[type=text], textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line);
+            border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+    textarea { height: 110px; font-family: ui-monospace, monospace; font-size: 12px; }
+    button, .button { display: inline-block; padding: 8px 16px; border: 0; border-radius: 8px; cursor: pointer;
+            background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600;
+            text-decoration: none; margin-top: 8px; }
+    button.secondary { background: transparent; color: var(--muted); border: 1px solid var(--line); font-weight: 400; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .row form { margin: 0; } .row button { margin-top: 0; }
+    .error { background: var(--danger-bg); color: var(--danger); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; }
+    .ok { background: var(--ok-bg); border-radius: 8px; padding: 10px 14px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .direction { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+    .checks { display: grid; gap: 6px; margin: 8px 0 16px; }
+    .playlists { max-height: 320px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+    label { cursor: pointer; }
+    progress { width: 100%; height: 10px; accent-color: var(--accent); }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    details { margin-top: 8px; } summary { cursor: pointer; }
+    .htmx-indicator { display: none; } .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline; }
+  </style>
+</head>
+<body>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

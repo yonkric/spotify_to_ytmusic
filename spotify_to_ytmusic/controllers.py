@@ -131,3 +131,9 @@ def cache_clear(args):
 
 def setup(args):
     setup_func(args.file)
+
+
+def web(args):
+    from spotify_to_ytmusic.web.app import serve
+
+    serve()

@@ -19,6 +19,14 @@ dependencies = [
 ]
 dynamic = ["version", "readme"]
 
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+]
+
 [project.scripts]
 spotify_to_ytmusic = "spotify_to_ytmusic.main:main"
 
@@ -39,7 +47,7 @@ readme = {file = ["README.rst"]}
 include-package-data=false
 
 [tool.setuptools.package-data]
-"*" = ["**.example", "**.py"]
+"*" = ["**.example", "**.py", "**.html"]
 
 
 ###############
@@ -75,6 +83,10 @@ ignore_missing_imports = true
 test = [
     "pytest>=7.4.4",
     "pytest-cov>=4.1.0",
+    "httpx2",
+    "fastapi>=0.115",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
 ]
 lint = [
     "ruff>=0.11.7",
