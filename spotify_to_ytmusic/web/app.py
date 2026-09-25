@@ -102,6 +102,7 @@ def create_app() -> FastAPI:
                 "spotify_user": spotify_user,
                 "ytm_connected": ytm is not None,
                 "error": error,
+                "job": state.jobs.latest(),
             },
         )
 

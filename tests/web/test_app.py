@@ -117,3 +117,16 @@ def test_transfer_runs_and_reports_not_found(client, connected):
     assert dest.added == {"new-Road trip": ["d1"]}
     report = client.get(f"/jobs/{job_id}/not-found.txt").text
     assert "A - Gone" in report
+
+
+def test_reloading_the_page_shows_the_latest_job(client, connected, monkeypatch):
+    monkeypatch.setattr(web_app.State, "spotify", lambda self: None)
+    monkeypatch.setattr(web_app.State, "ytm", lambda self: None)
+    assert "data-job-id" not in client.get("/").text
+
+    page = client.post(
+        "/transfer", data={"source": "spotify", "playlist_ids": "p1"}, headers=ORIGIN
+    ).text
+    job_id = page.split('data-job-id="')[1].split('"')[0]
+
+    assert f'data-job-id="{job_id}"' in client.get("/").text

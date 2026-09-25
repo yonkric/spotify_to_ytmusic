@@ -56,6 +56,9 @@ class JobRunner:
     def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
 
+    def latest(self) -> Job | None:
+        return next(reversed(self._jobs.values()), None)
+
     def busy(self) -> bool:
         return any(j.status == "running" for j in self._jobs.values())
 

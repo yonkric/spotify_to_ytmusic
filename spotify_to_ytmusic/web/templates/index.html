@@ -69,6 +69,6 @@
   <span id="loading" class="htmx-indicator muted">Loading your library…</span>
   <div id="library"></div>
 </section>
-<div id="job-area"></div>
 {% endif %}
+<div id="job-area">{% if job %}{% include "_job.html" %}{% endif %}</div>
 {% endblock %}
