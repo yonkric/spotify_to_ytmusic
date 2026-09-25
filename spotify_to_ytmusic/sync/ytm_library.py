@@ -1,5 +1,8 @@
 """Read and write a YouTube Music library through ytmusicapi (browser auth)."""
 
+import json
+import time
+
 from ytmusicapi.models.content.enums import LikeStatus
 
 from spotify_to_ytmusic.sync.matching import best_album, best_artist, best_track
@@ -7,6 +10,9 @@ from spotify_to_ytmusic.sync.matching import best_album, best_artist, best_track
 ALL = 100_000  # ytmusicapi uses an int limit for these endpoints; large enough for any library
 PLAYLIST_WRITE_BATCH = 100
 AUTO_PLAYLISTS = {"LM", "SE"}  # Liked Music, Episodes for Later
+# Pause between searches; Google answers bursts of ~2k searches with a 403
+# "Sorry..." page. The real limit isn't published, 0.5s is a conservative guess.
+SEARCH_INTERVAL = 0.5
 
 
 def _artists(artists: list[dict] | None) -> str:
@@ -44,8 +50,26 @@ def _to_tracks(items: list[dict]) -> list[dict]:
 class YTMusicLibrary:
     name = "YouTube Music"
 
-    def __init__(self, api):
+    def __init__(self, api, search_interval: float = SEARCH_INTERVAL):
         self.api = api
+        self.search_interval = search_interval
+        self._next_search_at = 0.0
+
+    def _search(self, query: str, **kwargs) -> list[dict]:
+        now = time.monotonic()
+        wait = self._next_search_at - now
+        if wait > 0:
+            time.sleep(wait)
+        self._next_search_at = now + max(wait, 0) + self.search_interval
+        try:
+            return self.api.search(query, **kwargs)
+        except json.JSONDecodeError as ex:
+            # ytmusicapi fails to parse Google's HTML "Sorry..." block page
+            raise RuntimeError(
+                "YouTube is rate-limiting searches from your account (it answered with "
+                "its automated-traffic page). Wait a while, then run the transfer again; "
+                "everything already copied is kept and matches are remembered."
+            ) from ex
 
     # ---- read -------------------------------------------------------------
 
@@ -84,7 +108,7 @@ class YTMusicLibrary:
 
     def find_track(self, track: dict) -> str | None:
         query = f"{track['artist']} {track['name']}"
-        results = self.api.search(query)
+        results = self._search(query)
         candidates = [
             _track(r)
             for r in results
@@ -95,7 +119,7 @@ class YTMusicLibrary:
         return best_track(candidates, track)
 
     def find_album(self, album: dict) -> str | None:
-        results = self.api.search(f"{album['artist']} {album['name']}", filter="albums")
+        results = self._search(f"{album['artist']} {album['name']}", filter="albums")
         candidates = [
             {
                 "id": r["browseId"],
@@ -107,7 +131,7 @@ class YTMusicLibrary:
         return best_album(candidates, album)
 
     def find_artist(self, artist: dict) -> str | None:
-        results = self.api.search(artist["name"], filter="artists")
+        results = self._search(artist["name"], filter="artists")
         return best_artist(
             [{"id": r["browseId"], "name": r["artist"]} for r in results], artist
         )

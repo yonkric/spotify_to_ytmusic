@@ -164,3 +164,30 @@ class TestYTMusicLibrary:
         self.api.get_album.return_value = {"audioPlaylistId": "OLAK5"}
         self.lib.save_albums(["MPRE1"])
         self.api.rate_playlist.assert_called_once_with("OLAK5", LikeStatus.LIKE)
+
+
+class TestYTMusicRateLimit:
+    def test_google_block_page_becomes_clear_error(self):
+        import json
+
+        api = MagicMock()
+        api.search.side_effect = json.JSONDecodeError("Expecting value", "<html>", 0)
+        lib = YTMusicLibrary(api, search_interval=0)
+        target = {"name": "x", "artist": "y", "album": "", "duration": 100}
+        with pytest.raises(RuntimeError, match="rate-limiting"):
+            lib.find_track(target)
+
+    def test_searches_are_spaced_out(self, monkeypatch):
+        import spotify_to_ytmusic.sync.ytm_library as ytm
+
+        clock = iter([100.0, 100.1])
+        sleeps = []
+        monkeypatch.setattr(ytm.time, "monotonic", lambda: next(clock))
+        monkeypatch.setattr(ytm.time, "sleep", sleeps.append)
+        api = MagicMock()
+        api.search.return_value = []
+        lib = YTMusicLibrary(api, search_interval=0.5)
+        target = {"name": "x", "artist": "y", "album": "", "duration": 100}
+        lib.find_track(target)
+        lib.find_track(target)
+        assert sleeps == [pytest.approx(0.4)]

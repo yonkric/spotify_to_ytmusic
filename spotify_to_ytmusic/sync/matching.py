@@ -17,11 +17,17 @@ MIN_ALBUM_SIMILARITY = 0.8
 MIN_ALBUM_ARTIST_SIMILARITY = 0.5
 MIN_ARTIST_NAME_SIMILARITY = 0.9
 SONG_BONUS = 1.1
+# Artists often differ only by script (Jay Chou / 周杰倫); an almost identical
+# title with a near-identical length is then accepted without the artist check
+CROSS_SCRIPT_MIN_TITLE_SIMILARITY = 0.9
+CROSS_SCRIPT_MAX_DURATION_DIFF = 3
 
 _FEATURING = re.compile(
     r"\s*[\(\[](feat\.?|ft\.?|featuring|with)\s[^\)\]]*[\)\]]", re.IGNORECASE
 )
 _REMASTER = re.compile(r"\s+-\s+.*remaster.*$", re.IGNORECASE)
+# YouTube Music appends English translations to non-Latin titles: "オレンジ - Orange"
+_TRANSLATION = re.compile(r"^(?P<title>.*[^\x00-\x7f].*?)\s+-\s+[\x00-\x7f]+$")
 
 
 def clean_title(title: str) -> str:
@@ -47,10 +53,30 @@ def _duration_score(candidate: float | None, target: float | None) -> float | No
     return max(0.0, 1 - abs(candidate - target) * 2 / target)
 
 
+def _title_similarity(candidate: str, target: str) -> float:
+    target = clean_title(target)
+    variants = [candidate]
+    if match := _TRANSLATION.match(candidate):
+        variants.append(match.group("title"))
+    return max(_similarity(clean_title(v), target) for v in variants)
+
+
+def _same_length(candidate: float | None, target: float | None) -> bool:
+    return (
+        bool(candidate and target)
+        and abs(candidate - target) <= CROSS_SCRIPT_MAX_DURATION_DIFF
+    )
+
+
 def _track_score(candidate: dict, target: dict) -> float | None:
-    title = _similarity(clean_title(candidate["name"]), clean_title(target["name"]))
+    title = _title_similarity(candidate["name"], target["name"])
     artist = _artist_similarity(candidate["artist"], target["artist"])
-    if title < MIN_TITLE_SIMILARITY or artist < MIN_ARTIST_SIMILARITY:
+    if title < MIN_TITLE_SIMILARITY:
+        return None
+    if artist < MIN_ARTIST_SIMILARITY and not (
+        title >= CROSS_SCRIPT_MIN_TITLE_SIMILARITY
+        and _same_length(candidate.get("duration"), target.get("duration"))
+    ):
         return None
 
     weighted = [(title, 2.0), (artist, 1.0)]

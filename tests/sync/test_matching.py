@@ -89,3 +89,34 @@ class TestBestArtist:
             best_artist([{"id": "joe", "name": "Joe Jonas"}], {"name": "Nick Jonas"})
             is None
         )
+
+
+class TestCrossScript:
+    def test_artist_in_other_script_accepted_when_title_and_duration_agree(self):
+        target = track("告白氣球", "Jay Chou", duration=215, id=None)
+        candidates = [track("告白氣球", "周杰倫", duration=216, id="right")]
+        assert best_track(candidates, target) == "right"
+
+    def test_artist_in_other_script_rejected_when_duration_differs(self):
+        target = track("告白氣球", "Jay Chou", duration=215, id=None)
+        candidates = [track("告白氣球", "周杰倫", duration=260, id="cover")]
+        assert best_track(candidates, target) is None
+
+    def test_artist_in_other_script_rejected_without_duration(self):
+        target = track("告白氣球", "Jay Chou", duration=215, id=None)
+        candidates = [track("告白氣球", "周杰倫", duration=None, id="unknown")]
+        assert best_track(candidates, target) is None
+
+    def test_translated_title_suffix_is_ignored(self):
+        target = track("那些年", "Hu Xia", duration=369, id=None)
+        candidates = [
+            track("那些年 - Those Bygone Years", "Xia Hu", duration=369, id="right")
+        ]
+        assert best_track(candidates, target) == "right"
+
+    def test_translation_suffix_with_other_script_artist(self):
+        target = track("オレンジ", "7!!", duration=350, id=None)
+        candidates = [
+            track("オレンジ - Orange", "seven oops", duration=351, id="right")
+        ]
+        assert best_track(candidates, target) == "right"
