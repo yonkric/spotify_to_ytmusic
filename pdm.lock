@@ -4,8 +4,8 @@
 [metadata]
 groups = ["default", "lint", "test"]
 strategy = ["inherit_metadata"]
-lock_version = "4.5.0"
-content_hash = "sha256:1cfa39be805c053f35001d4649f1992ec9bc797b2de9662717df608de1d21a24"
+lock_version = "4.5.1"
+content_hash = "sha256:6c6c90e5d8b20dc22abf266cbad343d55c2c999c9390cb0e94f202bec35e185c"
 
 [[metadata.targets]]
 requires_python = ">=3.10"
@@ -545,7 +545,7 @@ files = [
 
 [[package]]
 name = "spotipy"
-version = "2.25.0"
+version = "2.26.0"
 requires_python = ">3.8"
 summary = "A light weight Python library for the Spotify Web API"
 groups = ["default"]
@@ -555,8 +555,8 @@ dependencies = [
     "urllib3>=1.26.0",
 ]
 files = [
-    {file = "spotipy-2.25.0-py3-none-any.whl", hash = "sha256:92ef16577adab22aeac7d699b9aa6abb8e38d3023d865c0a233cdcfa0dca9583"},
-    {file = "spotipy-2.25.0.tar.gz", hash = "sha256:c72720ef85355aff959f7fe8d89ded48504d8c33b92583db90ec16daac0da54f"},
+    {file = "spotipy-2.26.0-py3-none-any.whl", hash = "sha256:2726854ddfa0e5624aada592e737832ec75bdc00ae12c102779f8bd995329d49"},
+    {file = "spotipy-2.26.0.tar.gz", hash = "sha256:df6a25d8209072efa8cea165608ee644884e3804f8762b6d8e06ca1a5c7f8a63"},
 ]
 
 [[package]]

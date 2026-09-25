@@ -32,7 +32,7 @@ class Spotify:
                 client_id=client_id,
                 client_secret=client_secret,
                 redirect_uri="https://127.0.0.1",
-                scope="user-library-read",
+                scope="user-library-read playlist-read-private",
                 cache_handler=cache_handler,
                 open_browser=has_browser(),
             )
@@ -53,8 +53,8 @@ class Spotify:
         print("Getting Spotify tracks...")
         results = self.api.playlist(playlistId)
         name = results["name"]
-        total = int(results["tracks"]["total"])
-        tracks = build_results(results["tracks"]["items"])
+        total = int(results["items"]["total"])
+        tracks = build_results(results["items"]["items"])
         count = len(tracks)
         print(f"Spotify tracks: {count}/{total}")
 
@@ -71,16 +71,15 @@ class Spotify:
         }
 
     def getUserPlaylists(self, user):
-        pl = self.api.user_playlists(user)["items"]
-        count = 1
-        more = len(pl) == 50
-        while more:
-            results = self.api.user_playlists(user, offset=count * 50)["items"]
-            pl.extend(results)
-            more = len(results) == 50
-            count = count + 1
+        # GET /users/{id}/playlists was removed in Feb 2026, so only the
+        # authenticated user's own playlists can be listed
+        response = self.api.current_user_playlists(limit=50)
+        pl = response["items"]
+        while response["next"] is not None:
+            response = self.api.next(response)
+            pl.extend(response["items"])
 
-        return [p for p in pl if p["owner"]["id"] == user and p["tracks"]["total"] > 0]
+        return [p for p in pl if p["owner"]["id"] == user and p["items"]["total"] > 0]
 
     def getLikedPlaylist(self):
         response = self.api.current_user_saved_tracks(limit=50)
@@ -104,7 +103,11 @@ class Spotify:
 def build_results(tracks, album=None):
     results = []
     for track in tracks:
-        if "track" in track:
+        # playlist entries nest the track under "item" (Feb 2026 API),
+        # saved tracks still nest it under "track"
+        if "item" in track:
+            track = track["item"]
+        elif "track" in track:
             track = track["track"]
         if not track or track["duration_ms"] == 0:
             continue

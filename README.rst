@@ -83,7 +83,8 @@ The script will log its progress and output songs that were not found in YouTube
 Transfer all playlists of a Spotify user
 ----------------------------------------
 
-For migration purposes, it is possible to transfer all public playlists of a user by using the Spotify user's ID (unique username).
+For migration purposes, it is possible to transfer all of your own playlists by using your Spotify user ID (unique username).
+Since Spotify's February 2026 API changes, only the authenticated user's playlists can be listed, so this requires oAuth authentication.
 
 .. code-block::
 

@@ -15,6 +15,10 @@ class TestSpotify:
         assert len(data) == 3
         assert len(data["tracks"]) > 190
 
+    @pytest.mark.skip(
+        reason="GET /users/{id}/playlists was removed in Feb 2026; "
+        "covered offline by test_spotify_schema.py"
+    )
     def test_getUserPlaylists(self):
         playlists = self.spotify.getUserPlaylists("spinninrecordsofficial")
         assert len(playlists) > 40
