@@ -114,3 +114,6 @@ noresults.txt
 
 #PDM
 .pdm-python
+
+# macOS
+.DS_Store
