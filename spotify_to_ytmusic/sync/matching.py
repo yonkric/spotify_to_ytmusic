@@ -53,17 +53,32 @@ _VERSION_MARKERS = re.compile(
     re.IGNORECASE,
 )
 
-# Uploads that aren't the vocal original; rejected unless the target title says so too
-_NOT_ORIGINAL = re.compile(
-    r"instrumental|\binst\b|karaoke|off[ -]?vocal|\bcover\b|インスト|カラオケ|"
-    r"オフボーカル|歌ってみた|弾いてみた|伴奏|翻唱|纯音乐|純音樂|伴唱|"
-    r"[\(\[（【]\s*live\b|\s-\s*live\b",
+# Uploads that aren't the vocal recording; rejected unless the target is one too
+_NOT_VOCAL_ORIGINAL = re.compile(
+    r"instrumental|\binst\b|karaoke|off[ -]?vocal|インスト|カラオケ|オフボーカル|"
+    r"伴奏|纯音乐|純音樂|伴唱|[\(\[（【]\s*live\b|\s-\s*live\b",
     re.IGNORECASE,
+)
+# Someone else performing the song; fine when the target is itself such a version
+# ("Sisqo Thong Song - 1950s Motown Choir Version", "In the Style of Adam Sandler")
+_COVER = re.compile(r"\bcover\b|歌ってみた|弾いてみた|翻唱", re.IGNORECASE)
+_COVER_STYLE_SOURCE = re.compile(
+    r"\bversion\b|in the style of|tribute|\bcover\b|歌ってみた|翻唱", re.IGNORECASE
+)
+
+
+# Karaoke-catalog tracks ("In the Style of X [Performance Track]") are karaoke themselves
+_KARAOKE_SOURCE = re.compile(
+    r"performance track|in the style of|originally performed", re.IGNORECASE
 )
 
 
 def _not_original(candidate: str, target: str) -> bool:
-    return bool(_NOT_ORIGINAL.search(candidate)) and not _NOT_ORIGINAL.search(target)
+    if _NOT_VOCAL_ORIGINAL.search(candidate) and not (
+        _NOT_VOCAL_ORIGINAL.search(target) or _KARAOKE_SOURCE.search(target)
+    ):
+        return True
+    return bool(_COVER.search(candidate)) and not _COVER_STYLE_SOURCE.search(target)
 
 
 def _strip_soundtrack_notes(title: str) -> str:
@@ -82,6 +97,15 @@ def search_title(title: str) -> str:
     title = _FEATURING.sub("", title)
     title = _REMASTER.sub("", title)
     return _STANDARD_VERSION.sub("", title).strip()
+
+
+_ANY_BRACKETS = re.compile(r"\s*[\(\[（【][^\)\]）】]*[\)\]）】]")
+
+
+def bare_title(title: str) -> str:
+    """Search title without any bracketed notes, as a person would type it."""
+    bare = _ANY_BRACKETS.sub("", search_title(title)).strip()
+    return bare or search_title(title)
 
 
 def clean_title(title: str) -> str:
@@ -223,10 +247,11 @@ class Match:
     suggestions: tuple[dict, ...] = ()
 
 
-def _no_match(rejected: list[tuple[float, dict, str]]) -> Match:
+def _no_match(rejected: list[tuple[float, dict, str]], ordered: bool = False) -> Match:
     if not rejected:
         return Match(None, "no results")
-    rejected.sort(key=lambda r: -r[0])
+    if not ordered:
+        rejected.sort(key=lambda r: -r[0])
     suggestions = tuple(
         {**{k: v for k, v in c.items() if k != "variants"}, "reason": why}
         for _, c, why in rejected[:MAX_SUGGESTIONS]
@@ -279,6 +304,34 @@ def _plausibility(candidate: dict, target: dict, artist_ids: frozenset[str]) -> 
     )
 
 
+def _mixed_suggestions(rejected: list[tuple], target: dict) -> list[tuple]:
+    """Most plausible first, then make sure different angles are represented:
+    best title, closest length, same artist, and the service's top result."""
+    by_plausibility = sorted(rejected, key=lambda r: -r[0])
+    with_length = [
+        r for r in rejected if r[3].get("duration") and target.get("duration")
+    ]
+    angles = [
+        by_plausibility[0],
+        max(rejected, key=lambda r: _track_title(r[3], target)),
+        min(with_length, key=lambda r: abs(r[3]["duration"] - target["duration"]))
+        if with_length
+        else None,
+        max(
+            rejected, key=lambda r: _artist_similarity(r[3]["artist"], target["artist"])
+        ),
+        min(rejected, key=lambda r: r[1].get("rank", 0)),
+    ]
+    picked, seen = [], set()
+    for r in [a for a in angles if a] + by_plausibility:
+        # the same upload often appears under several ids
+        same = (r[1]["artist"].lower(), r[1]["name"].lower(), r[1].get("duration"))
+        if r[1]["id"] not in seen and same not in seen:
+            seen.update({r[1]["id"], same})
+            picked.append(r[:3])
+    return picked[:MAX_SUGGESTIONS]
+
+
 def match_track(
     candidates: list[dict], target: dict, artist_ids: frozenset[str] = frozenset()
 ) -> Match:
@@ -301,9 +354,14 @@ def match_track(
                     _plausibility(best, target, artist_ids),
                     c,
                     _track_rejection(best, target, artist_ids),
+                    best,
                 )
             )
-    return Match(max(scored)[2]) if scored else _no_match(rejected)
+    if scored:
+        return Match(max(scored)[2])
+    if not rejected:
+        return _no_match([])
+    return _no_match(_mixed_suggestions(rejected, target), ordered=True)
 
 
 def match_album(candidates: list[dict], target: dict) -> Match:

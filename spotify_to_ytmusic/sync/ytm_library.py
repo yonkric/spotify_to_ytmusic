@@ -11,6 +11,7 @@ from spotify_to_ytmusic.sync.matching import (
     match_album,
     match_artist,
     match_track,
+    bare_title,
     needs_artist_check,
     search_title,
 )
@@ -44,32 +45,31 @@ _VIDEO_NOTES = re.compile(
     r"[^\)\]】]*[\)\]】]",
     re.IGNORECASE,
 )
-_ARTIST_DASH_TITLE = re.compile(r"^(?P<artist>.+?)\s+[-–—]\s+(?P<title>.+)$")
+_DASH = re.compile(r"\s+[-–—]\s+")
 
 
 def _video_variants(title: str, uploader: str) -> tuple[str, list[dict]]:
     """Read a video title like a person: drop upload notes, and also try
     "Artist - Title" (uploaded by a label or TV channel)."""
     title = _VIDEO_NOTES.sub("", title).strip()
-    variants = []
-    if match := _ARTIST_DASH_TITLE.match(title):
-        variants.append(
-            {
-                "name": match.group("title"),
-                "artist": f"{match.group('artist')} {uploader}",
-            }
-        )
+    # every dash is a possible artist/title split: "Uploader - Artist - Title"
+    variants = [
+        {"name": title[dash.end() :], "artist": f"{title[: dash.start()]} {uploader}"}
+        for dash in _DASH.finditer(title)
+    ]
     return title, variants
 
 
 def _track(t: dict) -> dict:
     album = t.get("album")
-    is_song = (
-        t.get("resultType", "song") == "song"
-        or t.get("videoType") == "MUSIC_VIDEO_TYPE_ATV"
+    # search results say resultType; playlist entries only carry videoType
+    is_video = t.get("resultType") == "video" or t.get("videoType") in (
+        "MUSIC_VIDEO_TYPE_OMV",
+        "MUSIC_VIDEO_TYPE_UGC",
     )
+    is_song = not is_video or t.get("videoType") == "MUSIC_VIDEO_TYPE_ATV"
     name, variants = t["title"], []
-    if t.get("resultType") == "video":
+    if is_video:
         name, variants = _video_variants(t["title"], _artists(t.get("artists")))
     return {
         "id": t["videoId"],
@@ -192,7 +192,7 @@ class YTMusicLibrary:
         title = search_title(track["name"])
         queries = [
             (f"{track['artist']} {title}", "songs"),
-            (title, "songs"),
+            (bare_title(track["name"]), "songs"),
             (f"{track['artist']} {title}", None),
         ]
         seen: dict[str, dict] = {}

@@ -357,3 +357,40 @@ class TestVideoTitles:
             "duration": "2:18",
         }
         assert _track(song)["name"] == "Help! - Remastered"
+
+
+def test_playlist_entry_videos_are_read_like_search_videos():
+    from spotify_to_ytmusic.sync.ytm_library import _track
+
+    entry = {
+        "videoId": "v",
+        "title": "Beat Music - SCNDL & Strike Nine - Sultan",
+        "videoType": "MUSIC_VIDEO_TYPE_UGC",
+        "artists": [{"name": "Beat Music"}],
+        "duration": "2:53",
+    }
+    parsed = _track(entry)
+    assert parsed["is_song"] is False
+    assert [v["name"] for v in parsed["variants"]] == [
+        "SCNDL & Strike Nine - Sultan",
+        "Sultan",
+    ]
+    assert (
+        parsed["variants"][1]["artist"] == "Beat Music - SCNDL & Strike Nine Beat Music"
+    )
+
+
+def test_title_only_search_drops_bracket_notes():
+    api = MagicMock()
+    api.search.return_value = []
+    lib = YTMusicLibrary(api, search_interval=0)
+    lib.find_track(
+        {
+            "name": "At a Medium Pace (In the Style of Adam Sandler) [Performance Track]",
+            "artist": "Done Again",
+            "album": "",
+            "duration": 120,
+        }
+    )
+    queries = [c.args[0] for c in api.search.call_args_list]
+    assert "At a Medium Pace" in queries

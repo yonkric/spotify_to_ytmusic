@@ -226,8 +226,6 @@ class TestMatchExplanations:
         assert reasons["long"] == "different artist, length differs by 62s"
         assert reasons["nolen"] == "different artist"
         assert reasons["far"] == "different title"
-        # closest titles first
-        assert [s["id"] for s in result.suggestions][-1] == "far"
         assert result.reason.startswith("closest: 尼克 - Find You (")
 
     def test_suggestions_are_capped(self):
@@ -459,3 +457,96 @@ class TestSuggestionRanking:
             {**track("Song", "B", duration=150, id="second"), "rank": 3},
         ]
         assert match_track(candidates, target).suggestions[0]["id"] == "first"
+
+
+class TestCoverStyleSources:
+    def test_cover_allowed_when_source_is_itself_a_version_of_another_song(self):
+        target = track(
+            "Sisqo Thong Song - 1950s Motown Choir Version",
+            "gino",
+            duration=180,
+            id=None,
+        )
+        candidates = [
+            track(
+                "Thong Song (1950s Motown Choir Cover Version - Remastered)",
+                "The Classic Soul Choir",
+                duration=186,
+                id="choir",
+            )
+        ]
+        result = match_track(candidates, target)
+        assert result.suggestions[0]["id"] == "choir"
+        assert "cover" not in result.suggestions[0]["reason"]
+
+    def test_instrumental_still_rejected_for_version_sources(self):
+        target = track("Thong Song - Choir Version", "gino", duration=180, id=None)
+        candidates = [
+            track(
+                "Thong Song - Choir Version (Instrumental)",
+                "gino",
+                duration=180,
+                id="x",
+            )
+        ]
+        assert best_track(candidates, target) is None
+
+
+class TestMixedSuggestions:
+    def test_suggestions_cover_title_length_artist_and_top_result(self):
+        target = track("At a Medium Pace", "Done Again", duration=120, id=None)
+        candidates = [
+            {
+                **track("Ode to My Car", "Adam Sandler", duration=236, id="top"),
+                "rank": 0,
+            },
+            {
+                **track("The Longest Pee", "Adam Sandler", duration=136, id="b"),
+                "rank": 1,
+            },
+            {
+                **track("Toll Booth Willie", "Adam Sandler", duration=229, id="c"),
+                "rank": 2,
+            },
+            {**track("Mayor", "Adam Sandler", duration=228, id="d"), "rank": 3},
+            {**track("Pace", "Adam Sandler", duration=300, id="e"), "rank": 4},
+            {**track("Something", "Other", duration=121, id="len"), "rank": 5},
+            {
+                **track("At a Medium Pace", "Adam Sandler", duration=200, id="title"),
+                "rank": 6,
+            },
+            {**track("Nope", "Done Again", duration=400, id="artist"), "rank": 7},
+        ]
+        ids = [s["id"] for s in match_track(candidates, target).suggestions]
+        assert len(ids) == 5
+        assert {"title", "len", "artist", "top"} <= set(ids)
+        assert ids[0] == "title"
+
+
+class TestKaraokeSourcesAndDuplicates:
+    def test_karaoke_allowed_when_source_is_a_performance_track(self):
+        target = track(
+            "At a Medium Pace (In the Style of Adam Sandler) [Performance Track]",
+            "Done Again",
+            duration=184,
+            id=None,
+        )
+        candidates = [
+            track(
+                "At A Medium Pace (Karaoke Demonstration With Lead Vocal)",
+                "Stingray Music Karaoke",
+                duration=186,
+                id="k",
+            )
+        ]
+        assert "karaoke" not in match_track(candidates, target).suggestions[0]["reason"]
+
+    def test_identical_uploads_are_suggested_once(self):
+        target = track("Song", "A", duration=100, id=None)
+        candidates = [
+            track("Song", "B", duration=200, id="1"),
+            track("Song", "B", duration=200, id="2"),
+            track("Song", "C", duration=150, id="3"),
+        ]
+        ids = [s["id"] for s in match_track(candidates, target).suggestions]
+        assert len(ids) == 2 and "3" in ids
