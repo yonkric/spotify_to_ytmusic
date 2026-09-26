@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from spotify_to_ytmusic.sync.engine import Selection, apply_choices, run_transfer
+from spotify_to_ytmusic.web import auth
 from spotify_to_ytmusic.web.auth import MATCH_CACHE_FILE, friendly_error
 
 log = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ class Job:
     report: list[dict] = field(default_factory=list)
     error: str | None = None
     dest: Any = field(default=None, repr=False)  # library the transfer wrote to
+    dest_key: str = ""  # "spotify" | "ytm", to reconnect a saved review list
 
     @property
     def not_found_text(self) -> str:
@@ -67,11 +69,47 @@ class JobRunner:
         can't write to the account that was disconnected."""
         with self._lock:
             self._jobs = {k: j for k, j in self._jobs.items() if j.status == "running"}
+            auth.REVIEW_FILE.unlink(missing_ok=True)
+
+    def _save_review(self, job: Job) -> None:
+        """Keep the latest finished transfer's report (and review list) on disk."""
+        auth.REVIEW_FILE.parent.mkdir(parents=True, exist_ok=True)
+        auth.REVIEW_FILE.write_text(
+            json.dumps(
+                {
+                    "id": job.id,
+                    "direction": job.direction,
+                    "dest": job.dest_key,
+                    "report": job.report,
+                },
+                ensure_ascii=False,
+            )
+        )
+
+    def restore(self, library_for) -> None:
+        """Reload the saved review list; ``library_for(key)`` returns the connected
+        library or None. Skipped when that account isn't connected."""
+        if not auth.REVIEW_FILE.is_file():
+            return
+        saved = json.loads(auth.REVIEW_FILE.read_text())
+        dest = library_for(saved["dest"])
+        if dest is None:
+            return
+        job = Job(
+            id=saved["id"],
+            direction=saved["direction"],
+            status="done",
+            message="Finished",
+            report=saved["report"],
+            dest=dest,
+            dest_key=saved["dest"],
+        )
+        self._jobs[job.id] = job
 
     def busy(self) -> bool:
         return any(j.status == "running" for j in self._jobs.values())
 
-    def start(self, source, dest, selection: Selection) -> Job:
+    def start(self, source, dest, selection: Selection, dest_key: str = "") -> Job:
         with self._lock:
             if self.busy():
                 raise RuntimeError(
@@ -81,6 +119,7 @@ class JobRunner:
                 id=uuid.uuid4().hex[:12],
                 direction=f"{source.name} → {dest.name}",
                 dest=dest,
+                dest_key=dest_key,
             )
             self._jobs[job.id] = job
         threading.Thread(
@@ -96,6 +135,7 @@ class JobRunner:
         try:
             job.report = run_transfer(source, dest, selection, progress, cache)
             job.status, job.message = "done", "Finished"
+            self._save_review(job)
         except Exception as ex:
             log.error("Transfer %s failed:\n%s", job.id, traceback.format_exc())
             job.status, job.error = "failed", friendly_error(ex)
@@ -131,4 +171,5 @@ class JobRunner:
                     )
             finally:
                 _save_cache(cache)
+                self._save_review(job)
             return sum(len(p) for p in choices.values())

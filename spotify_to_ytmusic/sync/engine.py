@@ -34,12 +34,17 @@ def _cache_key(dest, kind: str, item: dict) -> str:
     return f"{dest.name}|{kind}|{item.get('artist', '')}|{item['name']}|{item.get('album', '')}"
 
 
+def _label_key(dest, kind: str, label: str) -> str:
+    """Secondary memory for user picks, for review items restored without a full key."""
+    return f"{dest.name}|{kind}-label|{label}"
+
+
 def _match_all(items, find, kind, dest, cache, progress, label):
     """Return (matched destination ids in source order, unmatched item reports)."""
     matched, not_found = [], []
     for i, item in enumerate(items, start=1):
         key = _cache_key(dest, kind, item)
-        dest_id = cache.get(key)
+        dest_id = cache.get(key) or cache.get(_label_key(dest, kind, _label(item)))
         if dest_id is None:
             match = find(item)
             dest_id = match.id
@@ -197,7 +202,10 @@ def apply_choices(
 
     new = _write_chosen(dest, section["target"], list(choices.values()))
     for index, chosen in choices.items():
-        cache[section["not_found"][index]["cache_key"]] = chosen
+        item = section["not_found"][index]
+        if item.get("cache_key"):
+            cache[item["cache_key"]] = chosen
+        cache[_label_key(dest, section["kind"], item["label"])] = chosen
     return {
         **section,
         "matched": section["matched"] + len(choices),

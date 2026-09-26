@@ -19,6 +19,7 @@ CONFIG_FILE = WEB_DIR / "config.json"
 SPOTIFY_TOKEN_FILE = WEB_DIR / "spotify_token.json"
 YTM_AUTH_FILE = WEB_DIR / "ytm_browser.json"
 MATCH_CACHE_FILE = WEB_DIR / "matches.json"
+REVIEW_FILE = WEB_DIR / "review.json"  # latest finished transfer, kept until the next
 
 
 def _ensure_private_dir() -> None:

@@ -17,6 +17,7 @@ def client(tmp_path, monkeypatch):
         "SPOTIFY_TOKEN_FILE",
         "YTM_AUTH_FILE",
         "MATCH_CACHE_FILE",
+        "REVIEW_FILE",
     ):
         monkeypatch.setattr(auth, name, tmp_path / getattr(auth, name).name)
     monkeypatch.setattr(auth, "WEB_DIR", tmp_path)
@@ -226,3 +227,21 @@ def test_bad_link_is_explained_and_nothing_added(client, connected):
         or "doesn't look like" in page
     )
     assert dest.added["new-Road trip"] == ["d1"]
+
+
+def test_review_list_survives_a_restart(client, connected, tmp_path):
+    _, dest = connected
+    job_id, _ = _finished_job(client)
+    restarted = TestClient(web_app.create_app(), base_url=web_app.ORIGIN)
+    page = restarted.get("/").text
+    assert f'data-job-id="{job_id}"' in page
+    assert 'value="g1"' in page
+    restarted.post(f"/jobs/{job_id}/resolve", data={"pick-0-0": "g2"}, headers=ORIGIN)
+    assert dest.added["new-Road trip"] == ["d1", "g2"]
+
+
+def test_disconnect_forgets_saved_review_list(client, connected):
+    _finished_job(client)
+    client.post("/ytm/logout", headers=ORIGIN)
+    restarted = TestClient(web_app.create_app(), base_url=web_app.ORIGIN)
+    assert "data-job-id" not in restarted.get("/").text

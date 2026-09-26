@@ -244,3 +244,18 @@ def test_apply_choices_accepts_ids_the_user_pasted():
     section = apply_choices(dest, report[0], {1: "pasted"}, cache, pasted={1})
     assert dest.added["new-Mix"] == ["pasted"]
     assert [nf["label"] for nf in section["not_found"]] == ["A - One"]
+
+
+def test_picks_are_remembered_by_label_too():
+    dest, report, cache = _section_with_suggestions()
+    section = {
+        **report[0],
+        "not_found": [{**nf, "cache_key": None} for nf in report[0]["not_found"]],
+    }
+    apply_choices(dest, section, {0: "o1"}, cache)
+    # a later run finds the pick by "artist - title" even without the full key
+    source = FakeLibrary(playlists={"p1": ("Mix", [t("One")])})
+    fresh = FakeLibrary()
+    rerun, _ = run(source, fresh, Selection(playlist_ids=["p1"]), cache)
+    assert rerun[0]["not_found"] == []
+    assert fresh.searches == 0

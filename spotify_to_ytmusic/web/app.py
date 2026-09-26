@@ -57,6 +57,12 @@ class State:
         client = auth.ytm_client()
         return YTMusicLibrary(client) if client else None
 
+    def library_if_connected(self, name: str):
+        try:
+            return self.library(name)
+        except HTTPException:
+            return None
+
     def library(self, name: str):
         lib = {"spotify": self.spotify, "ytm": self.ytm}[name]()
         if lib is None:
@@ -67,6 +73,7 @@ class State:
 def create_app() -> FastAPI:
     app = FastAPI(title="Spotify ⇄ YouTube Music")
     state = State()
+    state.jobs.restore(state.library_if_connected)
 
     @app.middleware("http")
     async def local_only(request: Request, call_next):
@@ -223,7 +230,9 @@ def create_app() -> FastAPI:
         src = state.library(source)
         dest = state.library("ytm" if source == "spotify" else "spotify")
         try:
-            job = state.jobs.start(src, dest, selection)
+            job = state.jobs.start(
+                src, dest, selection, "ytm" if source == "spotify" else "spotify"
+            )
         except RuntimeError as ex:
             return templates.TemplateResponse(
                 request, "_error.html", {"message": str(ex)}
