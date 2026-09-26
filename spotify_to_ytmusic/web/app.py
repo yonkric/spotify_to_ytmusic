@@ -100,7 +100,7 @@ def create_app() -> FastAPI:
                 )
             except Exception as ex:
                 log.exception("Spotify profile lookup failed")
-                error = f"Spotify login no longer works ({type(ex).__name__}); please reconnect."
+                error = f"Couldn't reach Spotify: {auth.friendly_error(ex)}"
         return templates.TemplateResponse(
             request,
             "index.html",
