@@ -10,6 +10,7 @@ Music and back) share one scorer:
 
 import difflib
 import re
+from dataclasses import dataclass
 
 MIN_TITLE_SIMILARITY = 0.6
 MIN_ARTIST_SIMILARITY = 0.4
@@ -17,6 +18,12 @@ MIN_ALBUM_SIMILARITY = 0.8
 MIN_ALBUM_ARTIST_SIMILARITY = 0.5
 MIN_ARTIST_NAME_SIMILARITY = 0.9
 SONG_BONUS = 1.1
+# The same recording is almost always within a few seconds on both services; a
+# bigger gap means live / remix / edit / another song, so it goes to user review
+MAX_DURATION_DIFF_SECONDS = 10
+MAX_DURATION_DIFF_RATIO = 0.05
+MIN_SPELLING_SIMILARITY = 0.8
+MAX_SUGGESTIONS = 5
 # Artists often differ only by script (Jay Chou / 周杰倫) and non-Latin titles carry
 # soundtrack notes; an almost identical core title with a near-identical length is
 # then accepted without the artist check
@@ -61,11 +68,31 @@ def _similarity(a: str, b: str) -> float:
     return difflib.SequenceMatcher(a=a.lower(), b=b.lower()).ratio()
 
 
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"\w+", text.lower()))
+
+
 def _artist_similarity(candidate: str, target: str) -> float:
+    """Shared artist words (credits differ: "Dax" / "Dax Elle King"), or near-identical
+    spelling. Loose character similarity alone lets unrelated names through."""
     candidate, target = candidate.lower(), target.lower()
     if candidate and target and (candidate in target or target in candidate):
         return 1.0
-    return _similarity(candidate, target)
+    c_words, t_words = _words(candidate), _words(target)
+    overlap = (
+        len(c_words & t_words) / min(len(c_words), len(t_words))
+        if c_words and t_words
+        else 0.0
+    )
+    spelling = _similarity(candidate, target)
+    return max(overlap, spelling if spelling >= MIN_SPELLING_SIMILARITY else 0.0)
+
+
+def _length_differs(candidate: float | None, target: float | None) -> bool:
+    if not candidate or not target:
+        return False
+    allowed = max(MAX_DURATION_DIFF_SECONDS, target * MAX_DURATION_DIFF_RATIO)
+    return abs(candidate - target) > allowed
 
 
 def _duration_score(candidate: float | None, target: float | None) -> float | None:
@@ -98,6 +125,8 @@ def _same_length(candidate: float | None, target: float | None) -> bool:
 
 
 def _track_score(candidate: dict, target: dict) -> float | None:
+    if _length_differs(candidate.get("duration"), target.get("duration")):
+        return None
     title = _title_similarity(candidate["name"], target["name"])
     artist = _artist_similarity(candidate["artist"], target["artist"])
     if _same_length(candidate.get("duration"), target.get("duration")):
@@ -119,27 +148,98 @@ def _track_score(candidate: dict, target: dict) -> float | None:
     return score * SONG_BONUS if candidate.get("is_song") else score
 
 
-def best_track(candidates: list[dict], target: dict) -> str | None:
-    scored = [
-        (s, c["id"]) for c in candidates if (s := _track_score(c, target)) is not None
-    ]
-    return max(scored)[1] if scored else None
+@dataclass(frozen=True)
+class Match:
+    """Outcome of matching one item: the accepted id, or why nothing was accepted
+    plus the closest rejected candidates for the user to review."""
+
+    id: str | None
+    reason: str = ""
+    suggestions: tuple[dict, ...] = ()
 
 
-def best_album(candidates: list[dict], target: dict) -> str | None:
-    scored = []
+def _no_match(rejected: list[tuple[float, dict, str]]) -> Match:
+    if not rejected:
+        return Match(None, "no results")
+    rejected.sort(key=lambda r: -r[0])
+    suggestions = tuple(
+        {**c, "reason": why} for _, c, why in rejected[:MAX_SUGGESTIONS]
+    )
+    closest = suggestions[0]
+    who = f"{closest['artist']} - " if closest.get("artist") else ""
+    return Match(
+        None, f"closest: {who}{closest['name']} ({closest['reason']})", suggestions
+    )
+
+
+def _track_rejection(candidate: dict, target: dict) -> str:
+    if _title_similarity(candidate["name"], target["name"]) < MIN_TITLE_SIMILARITY:
+        return "different title"
+    c_len, t_len = candidate.get("duration"), target.get("duration")
+    artist_differs = (
+        _artist_similarity(candidate["artist"], target["artist"])
+        < MIN_ARTIST_SIMILARITY
+    )
+    parts = ["different artist"] if artist_differs else []
+    if _length_differs(c_len, t_len):
+        parts.append(f"length differs by {round(abs(c_len - t_len))}s")
+    elif artist_differs:
+        if not c_len or not t_len:
+            parts.append("no length to confirm")
+        elif abs(c_len - t_len) > CROSS_SCRIPT_MAX_DURATION_DIFF:
+            parts.append(f"length differs by {round(abs(c_len - t_len))}s")
+        else:
+            parts.append("title not close enough")
+    return ", ".join(parts) or "not close enough"
+
+
+def match_track(candidates: list[dict], target: dict) -> Match:
+    scored, rejected = [], []
+    for c in candidates:
+        score = _track_score(c, target)
+        if score is None:
+            closeness = _title_similarity(c["name"], target["name"])
+            rejected.append((closeness, c, _track_rejection(c, target)))
+        else:
+            scored.append((score, c["id"]))
+    return Match(max(scored)[1]) if scored else _no_match(rejected)
+
+
+def match_album(candidates: list[dict], target: dict) -> Match:
+    scored, rejected = [], []
     for c in candidates:
         name = _similarity(clean_title(c["name"]), clean_title(target["name"]))
         artist = _artist_similarity(c["artist"], target["artist"])
         if name >= MIN_ALBUM_SIMILARITY and artist >= MIN_ALBUM_ARTIST_SIMILARITY:
             scored.append((name + artist, c["id"]))
-    return max(scored)[1] if scored else None
+        else:
+            why = (
+                "different album name"
+                if name < MIN_ALBUM_SIMILARITY
+                else "different artist"
+            )
+            rejected.append((name, c, why))
+    return Match(max(scored)[1]) if scored else _no_match(rejected)
+
+
+def match_artist(candidates: list[dict], target: dict) -> Match:
+    scored, rejected = [], []
+    for c in candidates:
+        name = _similarity(c["name"], target["name"])
+        if name >= MIN_ARTIST_NAME_SIMILARITY:
+            scored.append((name, c["id"]))
+        else:
+            rejected.append((name, c, "different name"))
+    return Match(max(scored)[1]) if scored else _no_match(rejected)
+
+
+def best_track(candidates: list[dict], target: dict) -> str | None:
+    return match_track(candidates, target).id
+
+
+def best_album(candidates: list[dict], target: dict) -> str | None:
+    return match_album(candidates, target).id
 
 
 def best_artist(candidates: list[dict], target: dict) -> str | None:
-    scored = [
-        (s, c["id"])
-        for c in candidates
-        if (s := _similarity(c["name"], target["name"])) >= MIN_ARTIST_NAME_SIMILARITY
-    ]
-    return max(scored)[1] if scored else None
+    return match_artist(candidates, target).id

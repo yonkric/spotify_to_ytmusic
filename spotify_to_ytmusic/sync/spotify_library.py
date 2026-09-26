@@ -1,6 +1,11 @@
 """Read and write a Spotify library through the Feb 2026 Web API (spotipy>=2.26)."""
 
-from spotify_to_ytmusic.sync.matching import best_album, best_artist, best_track
+from spotify_to_ytmusic.sync.matching import (
+    Match,
+    match_album,
+    match_artist,
+    match_track,
+)
 
 SEARCH_LIMIT = 10  # Spotify's maximum for development-mode apps since Feb 2026
 PLAYLIST_WRITE_BATCH = 100
@@ -111,14 +116,14 @@ class SpotifyLibrary:
 
     # ---- search -----------------------------------------------------------
 
-    def find_track(self, track: dict) -> str | None:
+    def find_track(self, track: dict) -> Match:
         query = f"{track['name']} {track['artist']}"
         results = self.api.search(query, limit=SEARCH_LIMIT, type="track")["tracks"][
             "items"
         ]
-        return best_track([_track(t) for t in results if t], track)
+        return match_track([_track(t) for t in results if t], track)
 
-    def find_album(self, album: dict) -> str | None:
+    def find_album(self, album: dict) -> Match:
         query = f"{album['name']} {album['artist']}"
         results = self.api.search(query, limit=SEARCH_LIMIT, type="album")["albums"][
             "items"
@@ -128,15 +133,19 @@ class SpotifyLibrary:
             for a in results
             if a
         ]
-        return best_album(candidates, album)
+        return match_album(candidates, album)
 
-    def find_artist(self, artist: dict) -> str | None:
+    def find_artist(self, artist: dict) -> Match:
         results = self.api.search(artist["name"], limit=SEARCH_LIMIT, type="artist")[
             "artists"
         ]["items"]
-        return best_artist(
+        return match_artist(
             [{"id": a["id"], "name": a["name"]} for a in results if a], artist
         )
+
+    @staticmethod
+    def url(kind: str, item_id: str) -> str:
+        return f"https://open.spotify.com/{kind}/{item_id}"
 
     # ---- write ------------------------------------------------------------
 

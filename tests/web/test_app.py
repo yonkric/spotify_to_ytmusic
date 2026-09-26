@@ -29,6 +29,7 @@ def connected(monkeypatch):
     source = FakeLibrary(playlists={"p1": ("Road trip", [t("One"), t("Gone")])})
     source.name = "Spotify"
     dest = FakeLibrary(known={"One": "d1"})
+    dest.suggest = {"Gone": ["g1", "g2"]}
     dest.name = "YouTube Music"
     monkeypatch.setattr(
         web_app.State, "library", lambda self, n: source if n == "spotify" else dest
@@ -130,3 +131,66 @@ def test_reloading_the_page_shows_the_latest_job(client, connected, monkeypatch)
     job_id = page.split('data-job-id="')[1].split('"')[0]
 
     assert f'data-job-id="{job_id}"' in client.get("/").text
+
+
+def _finished_job(client):
+    page = client.post(
+        "/transfer", data={"source": "spotify", "playlist_ids": "p1"}, headers=ORIGIN
+    ).text
+    job_id = page.split('data-job-id="')[1].split('"')[0]
+    for _ in range(50):
+        page = client.get(f"/jobs/{job_id}").text
+        if "Done." in page:
+            return job_id, page
+        time.sleep(0.05)
+    raise AssertionError("job did not finish")
+
+
+def test_not_found_shows_reason_and_suggestions_with_listen_links(client, connected):
+    _, page = _finished_job(client)
+    assert "closest: ..." in page
+    assert 'name="pick-0-0" value="g1"' in page
+    assert "https://listen.example/track/g2" in page
+    assert "None of these" in page
+
+
+def test_picking_a_suggestion_adds_it(client, connected):
+    _, dest = connected
+    job_id, _ = _finished_job(client)
+    page = client.post(
+        f"/jobs/{job_id}/resolve", data={"pick-0-0": "g2"}, headers=ORIGIN
+    ).text
+    assert "Added 1 of your picks" in page
+    assert dest.added["new-Road trip"] == ["d1", "g2"]
+    assert "not found — review" not in page  # nothing left to review
+    assert "g2" in (auth.MATCH_CACHE_FILE.read_text())
+
+
+def test_none_of_these_changes_nothing(client, connected):
+    _, dest = connected
+    job_id, _ = _finished_job(client)
+    page = client.post(
+        f"/jobs/{job_id}/resolve", data={"pick-0-0": ""}, headers=ORIGIN
+    ).text
+    assert dest.added["new-Road trip"] == ["d1"]
+    assert 'value="g1"' in page
+
+
+def test_forged_pick_is_rejected(client, connected):
+    _, dest = connected
+    job_id, _ = _finished_job(client)
+    response = client.post(
+        f"/jobs/{job_id}/resolve", data={"pick-0-0": "not-offered"}, headers=ORIGIN
+    )
+    assert response.status_code == 400
+    assert dest.added["new-Road trip"] == ["d1"]
+
+
+def test_switching_accounts_clears_old_review_lists(client, connected, monkeypatch):
+    job_id, _ = _finished_job(client)
+    client.post("/ytm/logout", headers=ORIGIN)
+    assert client.get(f"/jobs/{job_id}").status_code == 404
+    response = client.post(
+        f"/jobs/{job_id}/resolve", data={"pick-0-0": "g1"}, headers=ORIGIN
+    )
+    assert response.status_code == 404

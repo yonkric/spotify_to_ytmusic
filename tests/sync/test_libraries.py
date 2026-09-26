@@ -76,7 +76,7 @@ class TestSpotifyLibrary:
             "album": "",
             "duration": 198,
         }
-        assert self.lib.find_track(target) == "hit"
+        assert self.lib.find_track(target).id == "hit"
         assert self.api.search.call_args.kwargs["limit"] == 10
 
     def test_followed_artists_use_cursor_paging(self):
@@ -147,7 +147,7 @@ class TestYTMusicLibrary:
             "album": "Find You",
             "duration": 197.9,
         }
-        assert self.lib.find_track(target) == "s"
+        assert self.lib.find_track(target).id == "s"
 
     def test_create_playlist_error_is_raised(self):
         self.api.get_library_playlists.return_value = []
@@ -211,7 +211,7 @@ class TestYTMusicSearchFallbacks:
             "duration": 244,
         }
 
-        assert lib.find_track(target) == "v"
+        assert lib.find_track(target).id == "v"
         assert [
             (c.args[0], c.kwargs.get("filter")) for c in api.search.call_args_list
         ] == [
@@ -232,7 +232,9 @@ class TestYTMusicSearchFallbacks:
         ]
         lib = YTMusicLibrary(api, search_interval=0)
         assert (
-            lib.find_track({"name": "x", "artist": "y", "album": "", "duration": 100})
+            lib.find_track(
+                {"name": "x", "artist": "y", "album": "", "duration": 100}
+            ).id
             == "v"
         )
         assert api.search.call_count == 1

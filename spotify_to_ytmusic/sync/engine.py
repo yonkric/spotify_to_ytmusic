@@ -3,6 +3,9 @@
 ``source`` and ``dest`` are SpotifyLibrary / YTMusicLibrary instances (or anything
 with the same methods). Re-running a transfer only adds what the destination is
 missing, and matches are cached so repeat runs skip searching.
+
+Items that can't be matched are reported with a reason and the closest rejected
+candidates, so the user can pick the right one (``apply_choices``).
 """
 
 from collections.abc import Callable, MutableMapping
@@ -27,27 +30,41 @@ def _label(item: dict) -> str:
     return f"{item['artist']} - {item['name']}" if item.get("artist") else item["name"]
 
 
+def _cache_key(dest, kind: str, item: dict) -> str:
+    return f"{dest.name}|{kind}|{item.get('artist', '')}|{item['name']}|{item.get('album', '')}"
+
+
 def _match_all(items, find, kind, dest, cache, progress, label):
-    """Return (matched destination ids in source order, labels of unmatched items)."""
+    """Return (matched destination ids in source order, unmatched item reports)."""
     matched, not_found = [], []
     for i, item in enumerate(items, start=1):
-        key = f"{dest.name}|{kind}|{item.get('artist', '')}|{item['name']}|{item.get('album', '')}"
+        key = _cache_key(dest, kind, item)
         dest_id = cache.get(key)
         if dest_id is None:
-            dest_id = find(item)
-            if dest_id is not None:
+            match = find(item)
+            dest_id = match.id
+            if dest_id is None:
+                not_found.append(
+                    {
+                        "label": _label(item),
+                        "reason": match.reason,
+                        "suggestions": list(match.suggestions),
+                        "cache_key": key,
+                    }
+                )
+            else:
                 cache[key] = dest_id
-        if dest_id is None:
-            not_found.append(_label(item))
-        else:
+        if dest_id is not None:
             matched.append(dest_id)
         progress(f"{label}: matching {i}/{len(items)}", i, len(items))
     return matched, not_found
 
 
-def _result(label, items, matched, added, not_found) -> dict:
+def _result(label, kind, target, items, matched, added, not_found) -> dict:
     return {
         "label": label,
+        "kind": kind,
+        "target": target,
         "total": len(items),
         "matched": len(matched),
         "added": added,
@@ -66,17 +83,19 @@ def _transfer_playlist(source, dest, playlist, cache, progress) -> dict:
     )
     new = [i for i in _unique(matched) if i not in existing]
     dest.add_to_playlist(dest_id, new)
-    return _result(label, tracks, matched, len(new), not_found)
+    target = {"type": "playlist", "id": dest_id}
+    return _result(label, "track", target, tracks, matched, len(new), not_found)
 
 
 def _transfer_collection(
-    label, items, find, kind, existing, write, dest, cache, progress
+    label, target_type, items, find, kind, existing, write, dest, cache, progress
 ) -> dict:
     matched, not_found = _match_all(items, find, kind, dest, cache, progress, label)
     have = {x["id"] for x in existing()}
     new = [i for i in _unique(matched) if i not in have]
     write(new)
-    return _result(label, items, matched, len(new), not_found)
+    target = {"type": target_type}
+    return _result(label, kind, target, items, matched, len(new), not_found)
 
 
 def run_transfer(
@@ -91,6 +110,7 @@ def run_transfer(
         report.append(
             _transfer_collection(
                 "Liked songs",
+                "liked",
                 source.get_liked_tracks(),
                 dest.find_track,
                 "track",
@@ -105,6 +125,7 @@ def run_transfer(
         report.append(
             _transfer_collection(
                 "Saved albums",
+                "albums",
                 source.get_albums(),
                 dest.find_album,
                 "album",
@@ -119,6 +140,7 @@ def run_transfer(
         report.append(
             _transfer_collection(
                 "Followed artists",
+                "artists",
                 source.get_artists(),
                 dest.find_artist,
                 "artist",
@@ -130,3 +152,51 @@ def run_transfer(
             )
         )
     return report
+
+
+def _write_chosen(dest, target: dict, ids: list[str]) -> list[str]:
+    """Write ids the user picked; returns the ids that were actually new."""
+    if target["type"] == "playlist":
+        have = {t["id"] for t in dest.get_playlist_tracks(target["id"])}
+        new = [i for i in _unique(ids) if i not in have]
+        dest.add_to_playlist(target["id"], new)
+        return new
+    existing, write = {
+        "liked": (dest.get_liked_tracks, dest.like_tracks),
+        "albums": (dest.get_albums, dest.save_albums),
+        "artists": (dest.get_artists, dest.follow_artists),
+    }[target["type"]]
+    have = {x["id"] for x in existing()}
+    new = [i for i in _unique(ids) if i not in have]
+    write(new)
+    return new
+
+
+def apply_choices(
+    dest, section: dict, choices: dict[int, str], cache: MutableMapping
+) -> dict:
+    """Add the suggestions the user picked for unmatched items of one report section.
+
+    ``choices`` maps an index into ``section["not_found"]`` to a suggested id. Only ids
+    that were actually offered for that item are accepted. Returns the updated section.
+    """
+    for index, chosen in choices.items():
+        if not 0 <= index < len(section["not_found"]):
+            raise ValueError(f"No unmatched item #{index} in {section['label']}")
+        offered = {s["id"] for s in section["not_found"][index]["suggestions"]}
+        if chosen not in offered:
+            raise ValueError(
+                f"'{chosen}' was not offered for {section['not_found'][index]['label']}"
+            )
+
+    new = _write_chosen(dest, section["target"], list(choices.values()))
+    for index, chosen in choices.items():
+        cache[section["not_found"][index]["cache_key"]] = chosen
+    return {
+        **section,
+        "matched": section["matched"] + len(choices),
+        "added": section["added"] + len(new),
+        "not_found": [
+            nf for i, nf in enumerate(section["not_found"]) if i not in choices
+        ],
+    }

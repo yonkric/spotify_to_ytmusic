@@ -8,6 +8,7 @@ from urllib.parse import quote
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 from spotify_to_ytmusic.sync.engine import Selection
 from spotify_to_ytmusic.sync.spotify_library import SpotifyLibrary
@@ -153,6 +154,7 @@ def create_app() -> FastAPI:
     @app.post("/spotify/logout")
     def spotify_logout():
         auth.forget(auth.SPOTIFY_TOKEN_FILE)
+        state.jobs.forget_finished()
         return RedirectResponse("/", 303)
 
     # ---- YouTube Music ------------------------------------------------------
@@ -173,6 +175,7 @@ def create_app() -> FastAPI:
     @app.post("/ytm/logout")
     def ytm_logout():
         auth.forget(auth.YTM_AUTH_FILE)
+        state.jobs.forget_finished()
         return RedirectResponse("/", 303)
 
     # ---- transfer -----------------------------------------------------------
@@ -233,6 +236,38 @@ def create_app() -> FastAPI:
         if job is None:
             raise HTTPException(404, "No such job")
         return templates.TemplateResponse(request, "_job.html", {"job": job})
+
+    @app.post("/jobs/{job_id}/resolve", response_class=HTMLResponse)
+    async def job_resolve(request: Request, job_id: str):
+        job = state.jobs.get(job_id)
+        if job is None:
+            raise HTTPException(404, "No such job")
+        choices: dict[int, dict[int, str]] = {}
+        for name, value in (await request.form()).multi_items():
+            # fields are "pick-<section>-<item>"; an empty value means "none of these"
+            parts = name.split("-")
+            if len(parts) != 3 or parts[0] != "pick" or not value:
+                continue
+            try:
+                section, item = int(parts[1]), int(parts[2])
+            except ValueError:
+                raise HTTPException(400, f"Bad field {name!r}") from None
+            choices.setdefault(section, {})[item] = str(value)
+        notice = None
+        if choices:
+            try:
+                added = await run_in_threadpool(state.jobs.resolve, job, choices)
+                notice = (
+                    f"Added {added} of your picks and remembered them for next time."
+                )
+            except ValueError as ex:
+                raise HTTPException(400, str(ex)) from None
+            except Exception as ex:
+                log.exception("Applying picks for job %s failed", job_id)
+                notice = f"Couldn't add your picks: {type(ex).__name__}: {ex}"
+        return templates.TemplateResponse(
+            request, "_job.html", {"job": job, "notice": notice}
+        )
 
     @app.get("/jobs/{job_id}/not-found.txt", response_class=PlainTextResponse)
     def job_not_found(job_id: str):

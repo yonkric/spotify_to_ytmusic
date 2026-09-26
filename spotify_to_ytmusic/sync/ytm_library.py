@@ -5,7 +5,12 @@ import time
 
 from ytmusicapi.models.content.enums import LikeStatus
 
-from spotify_to_ytmusic.sync.matching import best_album, best_artist, best_track
+from spotify_to_ytmusic.sync.matching import (
+    Match,
+    match_album,
+    match_artist,
+    match_track,
+)
 
 ALL = 100_000  # ytmusicapi uses an int limit for these endpoints; large enough for any library
 PLAYLIST_WRITE_BATCH = 100
@@ -106,7 +111,7 @@ class YTMusicLibrary:
 
     # ---- search -----------------------------------------------------------
 
-    def find_track(self, track: dict) -> str | None:
+    def find_track(self, track: dict) -> Match:
         # "songs" results carry durations (needed to confirm cross-script matches);
         # all-results is last, for tracks that only exist as videos
         queries = [
@@ -114,6 +119,7 @@ class YTMusicLibrary:
             (track["name"], "songs"),
             (f"{track['artist']} {track['name']}", None),
         ]
+        seen: dict[str, dict] = {}
         for query, search_filter in queries:
             results = self._search(query, filter=search_filter)
             candidates = [
@@ -123,11 +129,15 @@ class YTMusicLibrary:
                 and r.get("videoId")
                 and r.get("title")
             ]
-            if match := best_track(candidates, track):
+            match = match_track(candidates, track)
+            if match.id:
                 return match
-        return None
+            # keep the first sighting: "songs" results carry durations
+            for c in candidates:
+                seen.setdefault(c["id"], c)
+        return match_track(list(seen.values()), track)
 
-    def find_album(self, album: dict) -> str | None:
+    def find_album(self, album: dict) -> Match:
         results = self._search(f"{album['artist']} {album['name']}", filter="albums")
         candidates = [
             {
@@ -137,13 +147,18 @@ class YTMusicLibrary:
             }
             for r in results
         ]
-        return best_album(candidates, album)
+        return match_album(candidates, album)
 
-    def find_artist(self, artist: dict) -> str | None:
+    def find_artist(self, artist: dict) -> Match:
         results = self._search(artist["name"], filter="artists")
-        return best_artist(
+        return match_artist(
             [{"id": r["browseId"], "name": r["artist"]} for r in results], artist
         )
+
+    @staticmethod
+    def url(kind: str, item_id: str) -> str:
+        path = {"track": "watch?v=", "album": "browse/", "artist": "channel/"}[kind]
+        return f"https://music.youtube.com/{path}{item_id}"
 
     # ---- write ------------------------------------------------------------
 

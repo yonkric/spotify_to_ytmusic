@@ -3,6 +3,9 @@ from spotify_to_ytmusic.sync.matching import (
     best_artist,
     best_track,
     clean_title,
+    match_album,
+    match_artist,
+    match_track,
 )
 
 
@@ -172,3 +175,98 @@ class TestVersionNotesAreKept:
             track("有点甜", "汪苏泷 BY2", duration=235, id="original"),
         ]
         assert best_track(candidates, self.TARGET) == "original"
+
+
+class TestMatchExplanations:
+    def test_no_results(self):
+        result = match_track([], TARGET)
+        assert result.id is None
+        assert result.reason == "no results"
+        assert result.suggestions == ()
+
+    def test_rejections_explain_why_and_offer_suggestions(self):
+        candidates = [
+            track("Totally Different", "Someone", duration=100, id="far"),
+            track("Find You", "尼克", duration=260, id="long"),
+            track("Find You", "尼克", duration=None, id="nolen"),
+        ]
+        result = match_track(candidates, TARGET)
+
+        assert result.id is None
+        reasons = {s["id"]: s["reason"] for s in result.suggestions}
+        assert reasons["long"] == "different artist, length differs by 62s"
+        assert reasons["nolen"] == "different artist, no length to confirm"
+        assert reasons["far"] == "different title"
+        # closest titles first
+        assert [s["id"] for s in result.suggestions][-1] == "far"
+        assert result.reason.startswith("closest: 尼克 - Find You (")
+
+    def test_suggestions_are_capped(self):
+        candidates = [
+            track(f"Find You {i}", "X", duration=1, id=str(i)) for i in range(9)
+        ]
+        assert len(match_track(candidates, TARGET).suggestions) == 5
+
+    def test_match_has_no_suggestions(self):
+        result = match_track(
+            [track("Find You", "Nick Jonas", duration=198, id="ok")], TARGET
+        )
+        assert result.id == "ok"
+        assert result.suggestions == ()
+
+    def test_album_and_artist_explanations(self):
+        album = match_album(
+            [{"id": "a", "name": "Other", "artist": "Nick Jonas"}],
+            {"name": "Spaceman", "artist": "Nick Jonas"},
+        )
+        assert (
+            album.id is None
+            and album.suggestions[0]["reason"] == "different album name"
+        )
+        artist = match_artist(
+            [{"id": "j", "name": "Joe Jonas"}], {"name": "Nick Jonas"}
+        )
+        assert artist.id is None and artist.suggestions[0]["reason"] == "different name"
+
+
+class TestFalsePositivesFromRealRuns:
+    def test_similar_title_same_artist_but_other_length_rejected(self):
+        target = track("Some", "BOL4", duration=222, id=None)
+        result = match_track([track("Someday", "BOL4", duration=166, id="x")], target)
+        assert result.id is None
+        assert result.suggestions[0]["reason"] == "length differs by 56s"
+
+    def test_live_version_rejected_by_length(self):
+        target = track("Want You Back", "5 Seconds of Summer", duration=173, id=None)
+        candidates = [
+            track(
+                "Want You Back (Live)", "5 Seconds of Summer", duration=432, id="live"
+            )
+        ]
+        assert best_track(candidates, target) is None
+
+    def test_unrelated_uploader_rejected(self):
+        target = track("追光者", "Ariel Tsai", duration=213, id=None)
+        candidates = [track("追光者", "PED GT Studio", duration=228, id="x")]
+        assert best_track(candidates, target) is None
+
+    def test_extra_featured_artist_still_matches_when_length_agrees(self):
+        target = track("Dear Alcohol", "Dax", duration=236, id=None)
+        candidates = [track("Dear Alcohol", "Dax Elle King", duration=237, id="ok")]
+        assert best_track(candidates, target) == "ok"
+
+    def test_artist_word_overlap_matches_multi_artist_credits(self):
+        target = track(
+            "Enemy",
+            "Imagine Dragons JID Arcane League of Legends",
+            duration=173,
+            id=None,
+        )
+        candidates = [track("Enemy", "Imagine Dragons & JID", duration=174, id="ok")]
+        assert best_track(candidates, target) == "ok"
+
+    def test_long_tracks_allow_proportional_tolerance(self):
+        target = track("Epic Mix", "DJ", duration=600, id=None)
+        assert (
+            best_track([track("Epic Mix", "DJ", duration=626, id="ok")], target) == "ok"
+        )

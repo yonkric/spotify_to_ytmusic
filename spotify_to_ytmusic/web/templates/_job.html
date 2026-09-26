@@ -17,12 +17,40 @@
             <td class="num">{{ s.added }}</td><td class="num">{{ s.not_found|length }}</td></tr>
       {% endfor %}
     </table>
+    {% if notice %}<div class="ok">{{ notice }}</div>{% endif %}
     {% set missing = job.report|sum(attribute="not_found", start=[]) %}
     {% if missing %}
-      <details><summary>{{ missing|length }} not found</summary>
-        <ul class="muted">{% for m in missing %}<li>{{ m }}</li>{% endfor %}</ul>
-      </details>
-      <a class="button" href="/jobs/{{ job.id }}/not-found.txt">Download not-found list</a>
+      <h2 class="review-title">{{ missing|length }} not found — review</h2>
+      <p class="muted">Each song shows why it wasn't matched. Where {{ job.dest.name }} had something close,
+        listen and pick the right one, or leave "None of these".</p>
+      <form hx-post="/jobs/{{ job.id }}/resolve" hx-target="#job" hx-swap="outerHTML">
+        {% for s in job.report %}{% set si = loop.index0 %}
+          {% if s.not_found %}
+            <h3>{{ s.label }}</h3>
+            {% for nf in s.not_found %}{% set ii = loop.index0 %}
+              <div class="miss">
+                <div><strong>{{ nf.label }}</strong></div>
+                <div class="muted">{{ nf.reason }}</div>
+                {% if nf.suggestions %}
+                  <div class="picks">
+                    <span class="muted">Could this be it?</span>
+                    <label><input type="radio" name="pick-{{ si }}-{{ ii }}" value="" checked> None of these</label>
+                    {% for sug in nf.suggestions %}
+                      <label><input type="radio" name="pick-{{ si }}-{{ ii }}" value="{{ sug.id }}">
+                        {% if sug.artist %}{{ sug.artist }} – {% endif %}{{ sug.name }}
+                        {% if sug.duration %}<span class="muted">· {{ "%d:%02d"|format(sug.duration|int // 60, sug.duration|int % 60) }}</span>{% endif %}
+                        <a href="{{ job.dest.url(s.kind, sug.id) }}" target="_blank" rel="noopener">▶ listen</a>
+                        <span class="muted">({{ sug.reason }})</span></label>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+            {% endfor %}
+          {% endif %}
+        {% endfor %}
+        <button>Add selected</button>
+        <a class="button secondary-link" href="/jobs/{{ job.id }}/not-found.txt">Download not-found list</a>
+      </form>
     {% endif %}
   {% endif %}
 </section>
