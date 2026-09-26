@@ -245,3 +245,65 @@ def test_disconnect_forgets_saved_review_list(client, connected):
     client.post("/ytm/logout", headers=ORIGIN)
     restarted = TestClient(web_app.create_app(), base_url=web_app.ORIGIN)
     assert "data-job-id" not in restarted.get("/").text
+
+
+def _wait(client, job_id):
+    for _ in range(50):
+        page = client.get(f"/jobs/{job_id}").text
+        if "Done." in page or "stopped" in page:
+            return page
+        time.sleep(0.05)
+    raise AssertionError("job did not finish")
+
+
+def test_backup_download_and_restore_into_other_account(client, connected, monkeypatch):
+    import json
+
+    source, dest = connected
+    response = client.get("/backup/spotify.json")
+    assert response.status_code == 200
+    assert "attachment" in response.headers["content-disposition"]
+    backup = response.json()
+    assert backup["service"] == "Spotify"
+    assert [p["name"] for p in backup["playlists"]] == ["Road trip"]
+
+    other = FakeLibrary()
+    other.name = "Spotify"
+    monkeypatch.setattr(web_app.State, "library", lambda self, n: other)
+    page = client.post(
+        "/restore",
+        files={"backup": ("b.json", json.dumps(backup), "application/json")},
+        headers=ORIGIN,
+    ).text
+    job_id = page.split('data-job-id="')[1].split('"')[0]
+    page = _wait(client, job_id)
+    assert "Playlist: Road trip" in page
+    assert other.added == {"new-Road trip": ["src-One", "src-Gone"]}
+
+
+def test_restore_rejects_bad_files(client, connected):
+    for content, message in [
+        ("not json", "not JSON"),
+        ('{"hello": 1}', "a backup made by this app"),
+    ]:
+        page = client.post(
+            "/restore",
+            files={"backup": ("b.json", content, "application/json")},
+            headers=ORIGIN,
+        ).text
+        assert message in page
+
+
+def test_restore_does_not_replace_the_review_list(client, connected):
+    import json
+
+    job_id, _ = _finished_job(client)
+    backup = client.get("/backup/ytm.json").json()
+    page = client.post(
+        "/restore",
+        files={"backup": ("b.json", json.dumps(backup), "application/json")},
+        headers=ORIGIN,
+    ).text
+    _wait(client, page.split('data-job-id="')[1].split('"')[0])
+    restarted = TestClient(web_app.create_app(), base_url=web_app.ORIGIN)
+    assert f'data-job-id="{job_id}"' in restarted.get("/").text

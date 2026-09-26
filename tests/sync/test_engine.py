@@ -80,13 +80,15 @@ class FakeLibrary:
             if n == name:
                 return pid, {x["id"] for x in ts}
         self.created[name] = description
-        self.playlists[f"new-{name}"] = (f"_created {name}", [])
+        self.playlists[f"new-{name}"] = (name, [])
         return f"new-{name}", set()
 
     def add_to_playlist(self, pid, ids):
         self.added.setdefault(pid, []).extend(ids)
         if pid in self.playlists:
-            self.playlists[pid][1].extend({"id": i} for i in ids)
+            self.playlists[pid][1].extend(
+                {"id": i, "name": i, "artist": "", "album": "", "duration": None} for i in ids
+            )
 
     def like_tracks(self, ids):
         self.liked_ids.extend(ids)

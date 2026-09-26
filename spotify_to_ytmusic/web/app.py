@@ -5,11 +5,20 @@ import secrets
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+import json
+from datetime import date
+
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+)
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
+from spotify_to_ytmusic.sync.backup import export_library, validate_backup
 from spotify_to_ytmusic.sync.engine import Selection
 from spotify_to_ytmusic.sync.spotify_library import SpotifyLibrary
 from spotify_to_ytmusic.sync.ytm_library import YTMusicLibrary
@@ -22,6 +31,7 @@ HOST = "127.0.0.1"
 PORT = 8765
 ORIGIN = f"http://{HOST}:{PORT}"
 SPOTIFY_REDIRECT_URI = f"{ORIGIN}/callback/spotify"
+MAX_BACKUP_BYTES = 20 * 1024 * 1024
 ALLOWED_HOSTS = {f"{HOST}:{PORT}", f"localhost:{PORT}"}
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
@@ -73,7 +83,7 @@ class State:
 def create_app() -> FastAPI:
     app = FastAPI(title="Spotify ⇄ YouTube Music")
     state = State()
-    state.jobs.restore(state.library_if_connected)
+    state.jobs.reload_review(state.library_if_connected)
 
     @app.middleware("http")
     async def local_only(request: Request, call_next):
@@ -111,6 +121,7 @@ def create_app() -> FastAPI:
                 "ytm_connected": ytm is not None,
                 "error": error,
                 "job": state.jobs.latest(),
+                "restore_job": state.jobs.latest("restore"),
             },
         )
 
@@ -310,6 +321,59 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(
             request, "_job.html", {"job": job, "notice": notice, "problems": problems}
         )
+
+    # ---- backup / restore ----------------------------------------------------
+
+    @app.get("/backup/{service}.json")
+    async def backup_download(service: str):
+        if service not in ("spotify", "ytm"):
+            raise HTTPException(404, "Unknown service")
+        lib = state.library(service)
+        try:
+            backup = await run_in_threadpool(export_library, lib, lambda *e: None)
+        except Exception as ex:
+            log.exception("Backing up %s failed", lib.name)
+            raise HTTPException(
+                502, f"Couldn't read your {lib.name} library: {auth.friendly_error(ex)}"
+            ) from None
+        name = lib.name.lower().replace(" ", "-")
+        return JSONResponse(
+            backup,
+            headers={
+                "Content-Disposition": f'attachment; filename="{name}-backup-{date.today()}.json"'
+            },
+        )
+
+    @app.post("/restore", response_class=HTMLResponse)
+    async def restore_upload(request: Request, backup: UploadFile = File(...)):
+        def problem(message: str):
+            return templates.TemplateResponse(
+                request, "_error.html", {"message": message}
+            )
+
+        raw = await backup.read(MAX_BACKUP_BYTES + 1)
+        if len(raw) > MAX_BACKUP_BYTES:
+            return problem("That file is too big to be a backup from this app.")
+        try:
+            data = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return problem("That file isn't a backup made by this app (not JSON).")
+        try:
+            # the file must be a sound backup for the service it names
+            validate_backup(data, data.get("service") if isinstance(data, dict) else "")
+        except ValueError as ex:
+            return problem(str(ex))
+        service = {"YouTube Music": "ytm", "Spotify": "spotify"}.get(data["service"])
+        dest = state.library_if_connected(service) if service else None
+        if dest is None:
+            return problem(
+                f"Connect the {data['service']} account to restore into first."
+            )
+        try:
+            job = state.jobs.start_restore(dest, data, service)
+        except RuntimeError as ex:
+            return problem(str(ex))
+        return templates.TemplateResponse(request, "_job.html", {"job": job})
 
     @app.get("/jobs/{job_id}/not-found.txt", response_class=PlainTextResponse)
     def job_not_found(job_id: str):

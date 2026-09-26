@@ -8,6 +8,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from spotify_to_ytmusic.sync.backup import restore_library
 from spotify_to_ytmusic.sync.engine import Selection, apply_choices, run_transfer
 from spotify_to_ytmusic.web import auth
 from spotify_to_ytmusic.web.auth import MATCH_CACHE_FILE, friendly_error
@@ -27,6 +28,7 @@ class Job:
     error: str | None = None
     dest: Any = field(default=None, repr=False)  # library the transfer wrote to
     dest_key: str = ""  # "spotify" | "ytm", to reconnect a saved review list
+    kind: str = "transfer"  # transfer | restore
 
     @property
     def not_found_text(self) -> str:
@@ -61,8 +63,8 @@ class JobRunner:
     def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
 
-    def latest(self) -> Job | None:
-        return next(reversed(self._jobs.values()), None)
+    def latest(self, kind: str = "transfer") -> Job | None:
+        return next((j for j in reversed(self._jobs.values()) if j.kind == kind), None)
 
     def forget_finished(self) -> None:
         """Drop finished jobs, e.g. after switching accounts, so their review lists
@@ -86,7 +88,7 @@ class JobRunner:
             )
         )
 
-    def restore(self, library_for) -> None:
+    def reload_review(self, library_for) -> None:
         """Reload the saved review list; ``library_for(key)`` returns the connected
         library or None. Skipped when that account isn't connected."""
         if not auth.REVIEW_FILE.is_file():
@@ -108,6 +110,37 @@ class JobRunner:
 
     def busy(self) -> bool:
         return any(j.status == "running" for j in self._jobs.values())
+
+    def start_restore(self, dest, backup: dict, dest_key: str) -> Job:
+        """Restore a backup file into ``dest`` in the background (not saved as the
+        review list: a restore has nothing to review)."""
+        with self._lock:
+            if self.busy():
+                raise RuntimeError(
+                    "Something is already running; wait for it to finish."
+                )
+            job = Job(
+                id=uuid.uuid4().hex[:12],
+                direction=f"{backup['service']} backup → {dest.name}",
+                dest=dest,
+                dest_key=dest_key,
+                kind="restore",
+            )
+            self._jobs[job.id] = job
+
+        def work() -> None:
+            def progress(message: str, done: int, total: int) -> None:
+                job.message, job.done, job.total = message, done, total
+
+            try:
+                job.report = restore_library(dest, backup, progress)
+                job.status, job.message = "done", "Finished"
+            except Exception as ex:
+                log.error("Restore %s failed:\n%s", job.id, traceback.format_exc())
+                job.status, job.error = "failed", friendly_error(ex)
+
+        threading.Thread(target=work, daemon=True).start()
+        return job
 
     def start(self, source, dest, selection: Selection, dest_key: str = "") -> Job:
         with self._lock:

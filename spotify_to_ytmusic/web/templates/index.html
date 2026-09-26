@@ -71,4 +71,25 @@
 </section>
 {% endif %}
 <div id="job-area">{% if job %}{% include "_job.html" %}{% endif %}</div>
+
+{% if spotify_user or ytm_connected %}
+<section class="card">
+  <h2>Backup &amp; restore</h2>
+  <p class="muted">Save your playlists and liked songs to a file, exactly as they are now, and restore
+    them into another account of the same service later — no searching needed.</p>
+  <div class="row">
+    {% if ytm_connected %}<a class="button" href="/backup/ytm.json">Download YouTube Music backup</a>{% endif %}
+    {% if spotify_user %}<a class="button secondary-link" href="/backup/spotify.json">Download Spotify backup</a>{% endif %}
+  </div>
+  <form hx-post="/restore" hx-encoding="multipart/form-data" hx-target="#restore-area" hx-swap="innerHTML"
+        hx-disabled-elt="find button" class="restore">
+    <label class="muted">Restore a backup into the account that's connected now:
+      <input type="file" name="backup" accept=".json,application/json" required>
+    </label>
+    <button><span class="idle-label">Restore</span><span class="htmx-indicator">Uploading…</span></button>
+  </form>
+  <p class="muted">Playlists are matched by name and songs already there are skipped, so restoring twice adds nothing.</p>
+</section>
+<div id="restore-area">{% if restore_job %}{% with job = restore_job %}{% include "_job.html" %}{% endwith %}{% endif %}</div>
+{% endif %}
 {% endblock %}
