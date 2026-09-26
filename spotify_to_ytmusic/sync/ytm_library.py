@@ -107,16 +107,25 @@ class YTMusicLibrary:
     # ---- search -----------------------------------------------------------
 
     def find_track(self, track: dict) -> str | None:
-        query = f"{track['artist']} {track['name']}"
-        results = self._search(query)
-        candidates = [
-            _track(r)
-            for r in results
-            if r.get("resultType") in ("song", "video")
-            and r.get("videoId")
-            and r.get("title")
+        # "songs" results carry durations (needed to confirm cross-script matches);
+        # all-results is last, for tracks that only exist as videos
+        queries = [
+            (f"{track['artist']} {track['name']}", "songs"),
+            (track["name"], "songs"),
+            (f"{track['artist']} {track['name']}", None),
         ]
-        return best_track(candidates, track)
+        for query, search_filter in queries:
+            results = self._search(query, filter=search_filter)
+            candidates = [
+                _track(r)
+                for r in results
+                if r.get("resultType", "song") in ("song", "video")
+                and r.get("videoId")
+                and r.get("title")
+            ]
+            if match := best_track(candidates, track):
+                return match
+        return None
 
     def find_album(self, album: dict) -> str | None:
         results = self._search(f"{album['artist']} {album['name']}", filter="albums")

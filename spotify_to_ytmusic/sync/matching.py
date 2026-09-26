@@ -17,10 +17,11 @@ MIN_ALBUM_SIMILARITY = 0.8
 MIN_ALBUM_ARTIST_SIMILARITY = 0.5
 MIN_ARTIST_NAME_SIMILARITY = 0.9
 SONG_BONUS = 1.1
-# Artists often differ only by script (Jay Chou / 周杰倫); an almost identical
-# title with a near-identical length is then accepted without the artist check
+# Artists often differ only by script (Jay Chou / 周杰倫) and non-Latin titles carry
+# soundtrack notes; an almost identical core title with a near-identical length is
+# then accepted without the artist check
 CROSS_SCRIPT_MIN_TITLE_SIMILARITY = 0.9
-CROSS_SCRIPT_MAX_DURATION_DIFF = 3
+CROSS_SCRIPT_MAX_DURATION_DIFF = 6
 
 _FEATURING = re.compile(
     r"\s*[\(\[](feat\.?|ft\.?|featuring|with)\s[^\)\]]*[\)\]]", re.IGNORECASE
@@ -28,6 +29,8 @@ _FEATURING = re.compile(
 _REMASTER = re.compile(r"\s+-\s+.*remaster.*$", re.IGNORECASE)
 # YouTube Music appends English translations to non-Latin titles: "オレンジ - Orange"
 _TRANSLATION = re.compile(r"^(?P<title>.*[^\x00-\x7f].*?)\s+-\s+[\x00-\x7f]+$")
+# Non-Latin bracket notes: "有点甜 (《萌三国》网游主题曲)", "體面（電影《前任3》插曲）"
+_NON_LATIN_NOTE = re.compile(r"\s*[\(（][^\)）]*[^\x00-\x7f][^\)）]*[\)）]")
 
 
 def clean_title(title: str) -> str:
@@ -61,6 +64,14 @@ def _title_similarity(candidate: str, target: str) -> float:
     return max(_similarity(clean_title(v), target) for v in variants)
 
 
+def _core_title_similarity(candidate: str, target: str) -> float:
+    """Title similarity with non-Latin bracket notes removed from both sides."""
+    return _similarity(
+        _NON_LATIN_NOTE.sub("", clean_title(candidate)).strip(),
+        _NON_LATIN_NOTE.sub("", clean_title(target)).strip(),
+    )
+
+
 def _same_length(candidate: float | None, target: float | None) -> bool:
     return (
         bool(candidate and target)
@@ -71,12 +82,12 @@ def _same_length(candidate: float | None, target: float | None) -> bool:
 def _track_score(candidate: dict, target: dict) -> float | None:
     title = _title_similarity(candidate["name"], target["name"])
     artist = _artist_similarity(candidate["artist"], target["artist"])
-    if title < MIN_TITLE_SIMILARITY:
-        return None
-    if artist < MIN_ARTIST_SIMILARITY and not (
-        title >= CROSS_SCRIPT_MIN_TITLE_SIMILARITY
-        and _same_length(candidate.get("duration"), target.get("duration"))
-    ):
+    if _same_length(candidate.get("duration"), target.get("duration")):
+        title = max(title, _core_title_similarity(candidate["name"], target["name"]))
+        strong = title >= CROSS_SCRIPT_MIN_TITLE_SIMILARITY
+    else:
+        strong = False
+    if not strong and (title < MIN_TITLE_SIMILARITY or artist < MIN_ARTIST_SIMILARITY):
         return None
 
     weighted = [(title, 2.0), (artist, 1.0)]

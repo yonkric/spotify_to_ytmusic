@@ -120,3 +120,27 @@ class TestCrossScript:
             track("オレンジ - Orange", "seven oops", duration=351, id="right")
         ]
         assert best_track(candidates, target) == "right"
+
+
+class TestBracketNotes:
+    def test_soundtrack_note_ignored_when_length_agrees(self):
+        target = track("有点甜", "Silence Wang BY2", duration=235, id=None)
+        candidates = [
+            track(
+                "有点甜 (《萌三国》网游主题曲|《微微一笑很倾城》电视剧插曲)",
+                "汪苏泷 BY2",
+                duration=236,
+                id="right",
+            )
+        ]
+        assert best_track(candidates, target) == "right"
+
+    def test_bracket_version_rejected_when_length_differs(self):
+        target = track("童話", "Michael Wong", duration=244, id=None)
+        candidates = [track("童話 (演唱會版)", "光良", duration=290, id="live")]
+        assert best_track(candidates, target) is None
+
+    def test_five_second_difference_accepted_across_scripts(self):
+        target = track("只是太愛你", "Hins Cheung", duration=254, id=None)
+        candidates = [track("只是太愛你", "張敬軒", duration=249, id="right")]
+        assert best_track(candidates, target) == "right"

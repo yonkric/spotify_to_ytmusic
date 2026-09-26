@@ -187,7 +187,52 @@ class TestYTMusicRateLimit:
         api = MagicMock()
         api.search.return_value = []
         lib = YTMusicLibrary(api, search_interval=0.5)
-        target = {"name": "x", "artist": "y", "album": "", "duration": 100}
-        lib.find_track(target)
-        lib.find_track(target)
+        lib._search("a")
+        lib._search("b")
         assert sleeps == [pytest.approx(0.4)]
+
+
+class TestYTMusicSearchFallbacks:
+    def test_songs_filter_first_then_title_only_then_all_results(self):
+        api = MagicMock()
+        hit = {
+            "resultType": "song",
+            "videoId": "v",
+            "title": "童話",
+            "artists": [{"name": "光良"}],
+            "duration": "4:05",
+        }
+        api.search.side_effect = [[], [hit]]
+        lib = YTMusicLibrary(api, search_interval=0)
+        target = {
+            "name": "童話",
+            "artist": "Michael Wong",
+            "album": "",
+            "duration": 244,
+        }
+
+        assert lib.find_track(target) == "v"
+        assert [
+            (c.args[0], c.kwargs.get("filter")) for c in api.search.call_args_list
+        ] == [
+            ("Michael Wong 童話", "songs"),
+            ("童話", "songs"),
+        ]
+
+    def test_stops_at_first_query_with_a_match(self):
+        api = MagicMock()
+        api.search.return_value = [
+            {
+                "resultType": "song",
+                "videoId": "v",
+                "title": "x",
+                "artists": [{"name": "y"}],
+                "duration": "1:40",
+            }
+        ]
+        lib = YTMusicLibrary(api, search_interval=0)
+        assert (
+            lib.find_track({"name": "x", "artist": "y", "album": "", "duration": 100})
+            == "v"
+        )
+        assert api.search.call_count == 1
