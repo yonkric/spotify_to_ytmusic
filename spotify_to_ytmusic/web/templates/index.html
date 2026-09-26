@@ -1,94 +1,156 @@
 {% extends "base.html" %}
+
+{% block navbar %}
+<header class="navbar">
+  <div class="navbar-inner">
+    <span class="headline">Playlist Transfer</span>
+    <div class="status-chips" aria-label="Connections">
+      <span class="chip"><span class="dot {% if spotify_user %}on{% endif %}"></span>Spotify</span>
+      <span class="chip"><span class="dot {% if ytm_connected %}on{% endif %}"></span>YouTube Music</span>
+    </div>
+  </div>
+</header>
+{% endblock %}
+
 {% block content %}
-<h1>Spotify ⇄ YouTube Music</h1>
-<p class="sub">Move playlists, liked songs, albums and artists in either direction. Everything stays on this computer.</p>
+<div class="hero">
+  <h1 class="large-title">Transfer</h1>
+  <p class="subhead secondary">Move playlists, liked songs, albums and artists between Spotify and YouTube Music.
+    Everything stays on this computer.</p>
+</div>
 
-{% if error %}<div class="error">{{ error }}</div>{% endif %}
+{% if error %}
+  <div class="banner error appear" role="alert">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 13.2a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6zM12 6a1.2 1.2 0 0 0-1.2 1.3l.4 5.6a.8.8 0 0 0 1.6 0l.4-5.6A1.2 1.2 0 0 0 12 6z"/></svg>
+    <span>{{ error }}</span>
+  </div>
+{% endif %}
 
-<section class="card {% if spotify_user %}connected{% endif %}">
-  <h2><span class="step">1</span> Spotify</h2>
-  {% if spotify_user %}
-    <div class="row">
-      <span>Connected as <strong>{{ spotify_user }}</strong></span>
-      <form method="post" action="/spotify/logout"><button class="secondary">Disconnect</button></form>
-    </div>
-  {% elif client_id %}
-    <div class="row">
-      <a class="button" href="/spotify/login">Connect Spotify</a>
-      <span class="muted">Client ID <code>{{ client_id[:6] }}…</code></span>
-    </div>
-    <details class="muted"><summary>Use a different Client ID</summary>
-      <form method="post" action="/spotify/client-id">
-        <input type="text" name="client_id" placeholder="32-character Client ID" required>
-        <button>Save</button>
-      </form>
-    </details>
-  {% else %}
-    <ol>
-      <li>Open the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Spotify developer dashboard</a> → <strong>Create app</strong> (needs Spotify Premium).</li>
-      <li>Tick <strong>Web API</strong> and add the redirect URI <code>{{ redirect_uri }}</code>.</li>
-      <li>Paste the app's <strong>Client ID</strong> below (no secret needed).</li>
-    </ol>
-    <form method="post" action="/spotify/client-id">
-      <input type="text" name="client_id" placeholder="32-character Client ID" required>
-      <button>Save</button>
-    </form>
-  {% endif %}
-</section>
+<section class="section" aria-labelledby="accounts-h">
+  <h2 class="section-header" id="accounts-h">Accounts</h2>
+  <div class="group">
 
-<section class="card {% if ytm_connected %}connected{% endif %}">
-  <h2><span class="step">2</span> YouTube Music</h2>
-  {% if ytm_connected %}
-    <div class="row">
-      <span>Connected</span>
-      <form method="post" action="/ytm/logout"><button class="secondary">Disconnect</button></form>
+    <div class="cell icon-inset">
+      <span class="app-icon spotify">{% include "_icon_note.html" %}</span>
+      <div class="cell-main">
+        <div class="headline">Spotify</div>
+        <div class="footnote">{% if spotify_user %}Connected as {{ spotify_user }}{% elif client_id %}Ready to connect{% else %}Needs a one-time setup{% endif %}</div>
+      </div>
+      <div class="cell-trailing">
+        {% if spotify_user %}
+          <form method="post" action="/spotify/logout"><button class="destructive">Disconnect</button></form>
+        {% elif client_id %}
+          <a class="button small" href="/spotify/login">Connect</a>
+        {% endif %}
+      </div>
     </div>
-  {% else %}
-    <ol>
-      <li>In Chrome, open <a href="https://music.youtube.com" target="_blank" rel="noopener">music.youtube.com</a> signed in.</li>
-      <li>DevTools (<code>⌥⌘I</code>) → <strong>Network</strong> → filter <code>browse</code> → click around until a request appears.</li>
-      <li>Right-click it → <strong>Copy → Copy as cURL</strong>, and paste below.</li>
-    </ol>
-    <form method="post" action="/ytm/connect">
-      <textarea name="headers" placeholder="curl 'https://music.youtube.com/youtubei/v1/browse?…" required></textarea>
-      <p class="muted">This contains your login cookies. It's saved only on this computer.</p>
-      <button>Connect YouTube Music</button>
-    </form>
-  {% endif %}
+    {% if not spotify_user and client_id %}
+      <div class="stack">
+        <details>
+          <summary class="subhead">Use a different Client ID</summary>
+          <form method="post" action="/spotify/client-id" class="field-row">
+            <input type="text" name="client_id" placeholder="32-character Client ID" required aria-label="Spotify Client ID">
+            <button class="small">Save</button>
+          </form>
+          <p class="footnote">Current: <code>{{ client_id[:6] }}…</code></p>
+        </details>
+      </div>
+    {% elif not spotify_user %}
+      <div class="stack">
+        <ol class="steps subhead">
+          <li>Open the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Spotify developer dashboard</a> and choose <strong>Create app</strong> (needs Spotify Premium).</li>
+          <li>Tick <strong>Web API</strong> and add the redirect URI <code>{{ redirect_uri }}</code></li>
+          <li>Paste the app's <strong>Client ID</strong> below. No secret is needed.</li>
+        </ol>
+        <form method="post" action="/spotify/client-id" class="field-row">
+          <input type="text" name="client_id" placeholder="32-character Client ID" required aria-label="Spotify Client ID">
+          <button class="small">Save</button>
+        </form>
+      </div>
+    {% endif %}
+
+    <div class="cell icon-inset">
+      <span class="app-icon youtube">{% include "_icon_note.html" %}</span>
+      <div class="cell-main">
+        <div class="headline">YouTube Music</div>
+        <div class="footnote">{% if ytm_connected %}Connected{% else %}Not connected{% endif %}</div>
+      </div>
+      <div class="cell-trailing">
+        {% if ytm_connected %}
+          <form method="post" action="/ytm/logout"><button class="destructive">Disconnect</button></form>
+        {% endif %}
+      </div>
+    </div>
+    {% if not ytm_connected %}
+      <div class="stack">
+        <ol class="steps subhead">
+          <li>In Chrome, open <a href="https://music.youtube.com" target="_blank" rel="noopener">music.youtube.com</a> while signed in.</li>
+          <li>Open DevTools (<code>⌥⌘I</code>) → <strong>Network</strong>, filter <code>browse</code>, and click around until a request appears.</li>
+          <li>Right-click it → <strong>Copy → Copy as cURL</strong>, and paste it here.</li>
+        </ol>
+        <form method="post" action="/ytm/connect">
+          <textarea name="headers" placeholder="curl 'https://music.youtube.com/youtubei/v1/browse?…" required aria-label="Copied cURL request"></textarea>
+          <p class="footnote">This contains your login cookies. It's saved only on this computer.</p>
+          <button class="block">Connect YouTube Music</button>
+        </form>
+      </div>
+    {% endif %}
+
+  </div>
 </section>
 
 {% if spotify_user and ytm_connected %}
-<section class="card">
-  <h2><span class="step">3</span> Transfer</h2>
-  <div class="direction" hx-target="#library" hx-swap="innerHTML">
+<section class="section" aria-labelledby="transfer-h">
+  <h2 class="section-header" id="transfer-h">Transfer</h2>
+  <div class="segmented" role="radiogroup" aria-label="Direction" hx-target="#library" hx-swap="innerHTML">
     <label><input type="radio" name="source" value="spotify" checked
-      hx-get="/library?source=spotify" hx-trigger="change, load" hx-indicator="#loading"> Spotify → YouTube Music</label>
+      hx-get="/library?source=spotify" hx-trigger="change, load" hx-indicator="#loading"><span>Spotify → YouTube Music</span></label>
     <label><input type="radio" name="source" value="ytm"
-      hx-get="/library?source=ytm" hx-trigger="change" hx-indicator="#loading"> YouTube Music → Spotify</label>
+      hx-get="/library?source=ytm" hx-trigger="change" hx-indicator="#loading"><span>YouTube Music → Spotify</span></label>
   </div>
-  <span id="loading" class="htmx-indicator muted">Loading your library…</span>
+  <div id="loading" class="htmx-indicator footnote" style="gap:0.5rem;align-items:center;margin:0 1rem 1rem">
+    <span class="spinner"></span> Loading your library…
+  </div>
   <div id="library"></div>
 </section>
 {% endif %}
+
 <div id="job-area">{% if job %}{% include "_job.html" %}{% endif %}</div>
 
 {% if spotify_user or ytm_connected %}
-<section class="card">
-  <h2>Backup &amp; restore</h2>
-  <p class="muted">Save your playlists and liked songs to a file, exactly as they are now, and restore
-    them into another account of the same service later — no searching needed.</p>
-  <div class="row">
-    {% if ytm_connected %}<a class="button" href="/backup/ytm.json">Download YouTube Music backup</a>{% endif %}
-    {% if spotify_user %}<a class="button secondary-link" href="/backup/spotify.json">Download Spotify backup</a>{% endif %}
+<section class="section" aria-labelledby="backup-h">
+  <h2 class="section-header" id="backup-h">Backup &amp; Restore</h2>
+  <div class="group">
+    {% if ytm_connected %}
+      <div class="cell icon-inset">
+        <span class="app-icon youtube">{% include "_icon_note.html" %}</span>
+        <div class="cell-main"><div>YouTube Music backup</div><div class="footnote">Playlists and liked songs</div></div>
+        <div class="cell-trailing"><a class="button small tinted" href="/backup/ytm.json">Download</a></div>
+      </div>
+    {% endif %}
+    {% if spotify_user %}
+      <div class="cell icon-inset">
+        <span class="app-icon spotify">{% include "_icon_note.html" %}</span>
+        <div class="cell-main"><div>Spotify backup</div><div class="footnote">Playlists and liked songs</div></div>
+        <div class="cell-trailing"><a class="button small tinted" href="/backup/spotify.json">Download</a></div>
+      </div>
+    {% endif %}
+    <div class="stack">
+      <form hx-post="/restore" hx-encoding="multipart/form-data" hx-target="#restore-area" hx-swap="innerHTML"
+            hx-disabled-elt="find button">
+        <label>
+          <div>Restore a backup</div>
+          <div class="footnote">Into the account that's connected now.</div>
+          <input class="file-input" type="file" name="backup" accept=".json,application/json" required>
+        </label>
+        <div class="field-row">
+          <button class="small"><span class="idle-label">Restore</span><span class="htmx-indicator">Uploading…</span></button>
+        </div>
+      </form>
+    </div>
   </div>
-  <form hx-post="/restore" hx-encoding="multipart/form-data" hx-target="#restore-area" hx-swap="innerHTML"
-        hx-disabled-elt="find button" class="restore">
-    <label class="muted">Restore a backup into the account that's connected now:
-      <input type="file" name="backup" accept=".json,application/json" required>
-    </label>
-    <button><span class="idle-label">Restore</span><span class="htmx-indicator">Uploading…</span></button>
-  </form>
-  <p class="muted">Playlists are matched by name and songs already there are skipped, so restoring twice adds nothing.</p>
+  <p class="section-footer footnote">Restores exactly the saved songs, with no searching. Playlists are matched by name and
+    songs already there are skipped, so restoring twice adds nothing.</p>
 </section>
 <div id="restore-area">{% if restore_job %}{% with job = restore_job %}{% include "_job.html" %}{% endwith %}{% endif %}</div>
 {% endif %}

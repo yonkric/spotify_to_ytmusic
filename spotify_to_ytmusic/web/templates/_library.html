@@ -1,29 +1,41 @@
-<form hx-post="/transfer" hx-target="#job-area" hx-swap="innerHTML">
+<form hx-post="/transfer" hx-target="#job-area" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]" class="appear">
   <input type="hidden" name="source" value="{{ source }}">
-  <div class="checks">
-    <label><input type="checkbox" name="liked" value="true"> Liked songs</label>
-    <label><input type="checkbox" name="albums" value="true"> Saved albums</label>
-    <label><input type="checkbox" name="artists" value="true"> Followed artists</label>
+
+  <div class="group">
+    <label class="cell"><span class="cell-main">Liked songs</span>
+      <span class="switch"><input type="checkbox" name="liked" value="true"><span></span></span></label>
+    <label class="cell"><span class="cell-main">Saved albums</span>
+      <span class="switch"><input type="checkbox" name="albums" value="true"><span></span></span></label>
+    <label class="cell"><span class="cell-main">Followed artists</span>
+      <span class="switch"><input type="checkbox" name="artists" value="true"><span></span></span></label>
   </div>
 
-  <div class="row">
-    <strong>Playlists ({{ playlists|length }})</strong>
-    <label class="muted"><input type="checkbox"
-      onchange="document.querySelectorAll('input[name=playlist_ids]').forEach(c => c.checked = this.checked)"> Select all</label>
+  <div style="display:flex;align-items:baseline;justify-content:space-between;margin:1.75rem 1rem 0.5rem">
+    <span class="section-header" style="margin:0">Playlists · {{ playlists|length }}</span>
+    {% if playlists %}
+      <button type="button" class="plain subhead"
+        onclick="const boxes=[...this.form.querySelectorAll('input[name=playlist_ids]')];const all=boxes.every(b=>b.checked);boxes.forEach(b=>b.checked=!all);this.textContent=all?'Select All':'Deselect All'">Select All</button>
+    {% endif %}
   </div>
   {% if playlists %}
-    <div class="playlists checks">
+    <div class="group scroll-list">
       {% for p in playlists %}
-        <label><input type="checkbox" name="playlist_ids" value="{{ p.id }}"> {{ p.name }}
-          {% if p.count is not none %}<span class="muted">· {{ p.count }}</span>{% endif %}</label>
+        <label class="cell">
+          <span class="check"><input type="checkbox" name="playlist_ids" value="{{ p.id }}"><span></span></span>
+          <span class="cell-main">{{ p.name }}</span>
+          {% if p.count is not none %}<span class="cell-trailing num">{{ p.count }}</span>{% endif %}
+        </label>
       {% endfor %}
     </div>
   {% else %}
-    <p class="muted">No playlists of your own on {{ source_name }}.</p>
+    <div class="group"><div class="cell secondary">No playlists of your own on {{ source_name }}.</div></div>
   {% endif %}
   {% if source == "spotify" %}
-    <p class="muted">Only playlists you own or collaborate on are listed — Spotify no longer shares the songs in other people's playlists.</p>
+    <p class="section-footer footnote">Only playlists you own or collaborate on are listed. Spotify no longer shares the songs in other people's playlists.</p>
   {% endif %}
-  <button>Start transfer</button>
-  <p class="muted">Safe to re-run: it only adds what's missing on the other side.</p>
+
+  <div style="margin-top:1.5rem">
+    <button type="submit" class="block"><span class="idle-label">Start Transfer</span><span class="htmx-indicator">Starting…</span></button>
+    <p class="section-footer footnote" style="text-align:center">Safe to run again: it only adds what's missing on the other side.</p>
+  </div>
 </form>
