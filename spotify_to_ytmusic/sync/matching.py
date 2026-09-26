@@ -25,6 +25,8 @@ MAX_DURATION_DIFF_SECONDS = 10
 MAX_DURATION_DIFF_RATIO = 0.05
 MIN_SPELLING_SIMILARITY = 0.8
 MAX_SUGGESTIONS = 5
+# Without a length to check, only near-identical titles are accepted
+MIN_TITLE_SIMILARITY_WITHOUT_LENGTH = 0.9
 # Soundtrack notes are only ignored in titles when lengths agree this closely
 CORE_TITLE_MAX_DURATION_DIFF = 6
 
@@ -48,7 +50,8 @@ _VERSION_MARKERS = re.compile(
 # Uploads that aren't the vocal original; rejected unless the target title says so too
 _NOT_ORIGINAL = re.compile(
     r"instrumental|\binst\b|karaoke|off[ -]?vocal|\bcover\b|インスト|カラオケ|"
-    r"オフボーカル|歌ってみた|弾いてみた|伴奏|翻唱|纯音乐|純音樂|伴唱",
+    r"オフボーカル|歌ってみた|弾いてみた|伴奏|翻唱|纯音乐|純音樂|伴唱|"
+    r"[\(\[（【]\s*live\b|\s-\s*live\b",
     re.IGNORECASE,
 )
 
@@ -147,6 +150,10 @@ def _artist_verified(candidate: dict, artist_ids: frozenset[str]) -> bool:
     return bool(artist_ids & set(candidate.get("artist_ids") or ()))
 
 
+def _no_length(candidate: dict, target: dict) -> bool:
+    return bool(target.get("duration")) and not candidate.get("duration")
+
+
 def _track_title(candidate: dict, target: dict) -> float:
     title = _title_similarity(candidate["name"], target["name"])
     if _same_length(candidate.get("duration"), target.get("duration")):
@@ -162,6 +169,8 @@ def _track_score(
     if _not_original(candidate["name"], target["name"]):
         return None
     title = _track_title(candidate, target)
+    if _no_length(candidate, target) and title < MIN_TITLE_SIMILARITY_WITHOUT_LENGTH:
+        return None
     artist = _artist_similarity(candidate["artist"], target["artist"])
     if _artist_verified(candidate, artist_ids):
         artist = 1.0
@@ -217,8 +226,9 @@ def _no_match(rejected: list[tuple[float, dict, str]]) -> Match:
 
 def _track_rejection(candidate: dict, target: dict, artist_ids: frozenset[str]) -> str:
     if _not_original(candidate["name"], target["name"]):
-        return "instrumental/karaoke/cover"
-    if _track_title(candidate, target) < MIN_TITLE_SIMILARITY:
+        return "live/instrumental/karaoke/cover"
+    title = _track_title(candidate, target)
+    if title < MIN_TITLE_SIMILARITY:
         return "different title"
     parts = []
     if _artist_similarity(
@@ -228,6 +238,8 @@ def _track_rejection(candidate: dict, target: dict, artist_ids: frozenset[str]) 
     c_len, t_len = candidate.get("duration"), target.get("duration")
     if _length_differs(c_len, t_len):
         parts.append(f"length differs by {round(abs(c_len - t_len))}s")
+    elif _no_length(candidate, target) and title < MIN_TITLE_SIMILARITY_WITHOUT_LENGTH:
+        parts.append("no length to confirm")
     return ", ".join(parts) or "not close enough"
 
 

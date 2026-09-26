@@ -334,9 +334,9 @@ class TestInstrumentalAndCoverUploads:
             candidates = [track(title, "RADWIMPS", duration=344, id="x")]
             result = match_track(candidates, self.TARGET)
             assert result.id is None, title
-            assert result.suggestions[0]["reason"] == "instrumental/karaoke/cover", (
-                title
-            )
+            assert (
+                result.suggestions[0]["reason"] == "live/instrumental/karaoke/cover"
+            ), title
 
     def test_instrumental_allowed_when_spotify_track_is_instrumental(self):
         target = track(
@@ -352,3 +352,36 @@ class TestInstrumentalAndCoverUploads:
             track("なんでもないや (movie ver.)", "RADWIMPS", duration=344, id="ok")
         ]
         assert best_track(candidates, self.TARGET) == "ok"
+
+
+class TestNoDurationResults:
+    def test_other_song_with_shared_suffix_rejected_without_length(self):
+        target = track("なんでもないや - movie ver.", "RADWIMPS", duration=344, id=None)
+        candidates = [track("Sparkle - movie ver.", "RADWIMPS", duration=None, id="x")]
+        result = match_track(candidates, target)
+        assert result.id is None
+        assert result.suggestions[0]["reason"] == "no length to confirm"
+
+    def test_exact_title_without_length_still_matches(self):
+        target = track("Want You Back", "5 Seconds of Summer", duration=173, id=None)
+        candidates = [
+            track("Want You Back", "5 Seconds of Summer", duration=None, id="ok")
+        ]
+        assert best_track(candidates, target) == "ok"
+
+    def test_live_version_rejected_even_without_length(self):
+        target = track("Want You Back", "5 Seconds of Summer", duration=173, id=None)
+        for title in [
+            "Want You Back (Live)",
+            "Want You Back - Live",
+            "Want You Back [LIVE]",
+        ]:
+            candidates = [track(title, "5 Seconds of Summer", duration=None, id="live")]
+            assert best_track(candidates, target) is None, title
+
+    def test_live_in_song_name_is_fine(self):
+        target = track("Live While We're Young", "One Direction", duration=200, id=None)
+        candidates = [
+            track("Live While We're Young", "One Direction", duration=200, id="ok")
+        ]
+        assert best_track(candidates, target) == "ok"
