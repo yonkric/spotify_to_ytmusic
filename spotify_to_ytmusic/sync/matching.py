@@ -12,6 +12,9 @@ Music and back) share one scorer:
 import difflib
 import re
 from dataclasses import dataclass
+from functools import cache
+
+import opencc
 
 MIN_TITLE_SIMILARITY = 0.6
 MIN_ARTIST_SIMILARITY = 0.4
@@ -112,8 +115,17 @@ def clean_title(title: str) -> str:
     return search_title(title).lower()
 
 
+@cache
+def _simplified(text: str) -> str:
+    """Traditional and Simplified Chinese compare equal: 黃霄雲 = 黄霄云."""
+    return _TO_SIMPLIFIED.convert(text.lower())
+
+
+_TO_SIMPLIFIED = opencc.OpenCC("t2s")
+
+
 def _similarity(a: str, b: str) -> float:
-    return difflib.SequenceMatcher(a=a.lower(), b=b.lower()).ratio()
+    return difflib.SequenceMatcher(a=_simplified(a), b=_simplified(b)).ratio()
 
 
 _FILLER_WORDS = {"of", "the", "and", "feat", "ft", "featuring", "with", "x", "vs"}
@@ -132,7 +144,7 @@ def _words(text: str) -> set[str]:
 def _artist_similarity(candidate: str, target: str) -> float:
     """Shared artist words (credits differ: "Dax" / "Dax Elle King"), or near-identical
     spelling. Loose character similarity alone lets unrelated names through."""
-    candidate, target = candidate.lower(), target.lower()
+    candidate, target = _simplified(candidate), _simplified(target)
     if candidate and target and (candidate in target or target in candidate):
         return 1.0
     c_words, t_words = _words(candidate), _words(target)

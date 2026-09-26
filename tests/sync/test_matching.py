@@ -550,3 +550,20 @@ class TestKaraokeSourcesAndDuplicates:
         ]
         ids = [s["id"] for s in match_track(candidates, target).suggestions]
         assert len(ids) == 2 and "3" in ids
+
+
+class TestTraditionalSimplified:
+    def test_traditional_and_simplified_are_the_same_title_and_artist(self):
+        target = track("丟了你", "井朧", duration=277, id=None)
+        candidates = [track("丢了你", "井胧", duration=278, id="ok")]
+        assert best_track(candidates, target) == "ok"
+
+    def test_mixed_scripts_in_title(self):
+        target = track("剛好遇見你", "李玉剛", duration=201, id=None)
+        candidates = [track("刚好遇见你", "李玉刚", duration=202, id="ok")]
+        assert best_track(candidates, target) == "ok"
+
+    def test_artist_match_across_scripts_but_other_singer_still_rejected(self):
+        target = track("星辰大海", "黃霄雲", duration=207, id=None)
+        candidates = [track("星辰大海", "某某", duration=208, id="cover")]
+        assert best_track(candidates, target) is None

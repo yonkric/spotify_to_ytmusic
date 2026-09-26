@@ -23,7 +23,8 @@
       <h2 class="review-title">{{ missing|length }} not found — review</h2>
       <p class="muted">Each song shows why it wasn't matched. Where {{ job.dest.name }} had something close,
         listen and pick the right one, or leave "None of these".</p>
-      <form hx-post="/jobs/{{ job.id }}/resolve" hx-target="#job" hx-swap="outerHTML">
+      <form hx-post="/jobs/{{ job.id }}/resolve" hx-target="#job" hx-swap="outerHTML show:#job:top"
+            hx-disabled-elt="find button">
         {% for s in job.report %}{% set si = loop.index0 %}
           {% if s.not_found %}
             <h3>{{ s.label }}</h3>
@@ -48,7 +49,7 @@
             {% endfor %}
           {% endif %}
         {% endfor %}
-        <button>Add selected</button>
+        <button><span class="idle-label">Add selected</span><span class="htmx-indicator">Adding…</span></button>
         <a class="button secondary-link" href="/jobs/{{ job.id }}/not-found.txt">Download not-found list</a>
       </form>
     {% endif %}
