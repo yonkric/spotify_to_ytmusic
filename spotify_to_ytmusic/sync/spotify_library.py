@@ -134,7 +134,9 @@ class SpotifyLibrary:
         results = self.api.search(query, limit=SEARCH_LIMIT, type="track")["tracks"][
             "items"
         ]
-        candidates = [_track(t) for t in results if t]
+        candidates = [
+            {**_track(t), "rank": position} for position, t in enumerate(results) if t
+        ]
         match = match_track(candidates, track)
         if match.id or not needs_artist_check(candidates, track):
             return match

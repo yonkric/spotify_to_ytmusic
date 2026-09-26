@@ -204,11 +204,12 @@ def needs_artist_check(candidates: list[dict], target: dict) -> bool:
     """True when some candidate fails only on the artist name, so asking the service
     who the artist is (aliases, other scripts) could still confirm it."""
     return any(
-        not _length_differs(c.get("duration"), target.get("duration"))
-        and _track_title(c, target) >= MIN_TITLE_SIMILARITY
-        and _artist_similarity(c["artist"], target["artist"]) < MIN_ARTIST_SIMILARITY
-        and c.get("artist_ids")
+        not _length_differs(r.get("duration"), target.get("duration"))
+        and _track_title(r, target) >= MIN_TITLE_SIMILARITY
+        and _artist_similarity(r["artist"], target["artist"]) < MIN_ARTIST_SIMILARITY
+        and r.get("artist_ids")
         for c in candidates
+        for r in _readings(c)
     )
 
 
@@ -227,7 +228,8 @@ def _no_match(rejected: list[tuple[float, dict, str]]) -> Match:
         return Match(None, "no results")
     rejected.sort(key=lambda r: -r[0])
     suggestions = tuple(
-        {**c, "reason": why} for _, c, why in rejected[:MAX_SUGGESTIONS]
+        {**{k: v for k, v in c.items() if k != "variants"}, "reason": why}
+        for _, c, why in rejected[:MAX_SUGGESTIONS]
     )
     closest = suggestions[0]
     who = f"{closest['artist']} - " if closest.get("artist") else ""
@@ -255,19 +257,53 @@ def _track_rejection(candidate: dict, target: dict, artist_ids: frozenset[str]) 
     return ", ".join(parts) or "not close enough"
 
 
+def _readings(candidate: dict) -> list[dict]:
+    """The candidate as listed, plus other readings of it (a video titled
+    "Artist - Title" read as that artist and title)."""
+    return [candidate] + [{**candidate, **v} for v in candidate.get("variants", ())]
+
+
+def _plausibility(candidate: dict, target: dict, artist_ids: frozenset[str]) -> float:
+    """How likely a rejected candidate is what the user wants: title, same artist,
+    close length, and the service's own ranking (which reflects popularity)."""
+    artist_ok = _artist_verified(candidate, artist_ids) or (
+        _artist_similarity(candidate["artist"], target["artist"])
+        >= MIN_ARTIST_SIMILARITY
+    )
+    length = _duration_score(candidate.get("duration"), target.get("duration")) or 0.0
+    return (
+        _track_title(candidate, target)
+        + (0.5 if artist_ok else 0.0)
+        + 0.5 * length
+        - 0.01 * candidate.get("rank", 0)
+    )
+
+
 def match_track(
     candidates: list[dict], target: dict, artist_ids: frozenset[str] = frozenset()
 ) -> Match:
-    """``artist_ids``: the target artist's ids on the candidates' service, when known."""
+    """``artist_ids``: the target artist's ids on the candidates' service, when known.
+    Candidates may carry ``rank`` (position in the service's results)."""
     scored, rejected = [], []
     for c in candidates:
-        score = _track_score(c, target, artist_ids)
-        if score is None:
-            closeness = _title_similarity(c["name"], target["name"])
-            rejected.append((closeness, c, _track_rejection(c, target, artist_ids)))
+        readings = _readings(c)
+        scores = [
+            s
+            for r in readings
+            if (s := _track_score(r, target, artist_ids)) is not None
+        ]
+        if scores:
+            scored.append((max(scores), -c.get("rank", 0), c["id"]))
         else:
-            scored.append((score, c["id"]))
-    return Match(max(scored)[1]) if scored else _no_match(rejected)
+            best = max(readings, key=lambda r: _plausibility(r, target, artist_ids))
+            rejected.append(
+                (
+                    _plausibility(best, target, artist_ids),
+                    c,
+                    _track_rejection(best, target, artist_ids),
+                )
+            )
+    return Match(max(scored)[2]) if scored else _no_match(rejected)
 
 
 def match_album(candidates: list[dict], target: dict) -> Match:

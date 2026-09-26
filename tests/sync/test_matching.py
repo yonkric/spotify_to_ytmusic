@@ -431,3 +431,31 @@ class TestOriginalMix:
         assert (
             search_title("なんでもないや - movie ver.") == "なんでもないや - movie ver."
         )
+
+
+class TestSuggestionRanking:
+    def test_same_artist_close_length_ranks_first(self):
+        target = track(
+            "LUA NA PRAÇA - Slowed", "Dj Samir DJ Zarek", duration=101, id=None
+        )
+        candidates = [
+            track(
+                "LUA NA PRAÇA (Ultra Slowed)",
+                "AGRESSIVE PHONK",
+                duration=169,
+                id="phonk",
+            ),
+            track("LUA NA PRAÇA [ULTRA SLOWED]", "ATLXS", duration=195, id="atlxs"),
+            track("LUA NA PRAÇA", "DJ Samir", duration=89, id="original"),
+        ]
+        result = match_track(candidates, target)
+        assert result.id is None
+        assert result.suggestions[0]["id"] == "original"
+
+    def test_search_order_breaks_ties(self):
+        target = track("Song", "A", duration=100, id=None)
+        candidates = [
+            {**track("Song", "B", duration=150, id="first"), "rank": 0},
+            {**track("Song", "B", duration=150, id="second"), "rank": 3},
+        ]
+        assert match_track(candidates, target).suggestions[0]["id"] == "first"

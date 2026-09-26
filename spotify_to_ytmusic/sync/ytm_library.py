@@ -1,6 +1,7 @@
 """Read and write a YouTube Music library through ytmusicapi (browser auth)."""
 
 import json
+import re
 import time
 
 from ytmusicapi.models.content.enums import LikeStatus
@@ -37,18 +38,49 @@ def _seconds(t: dict) -> int | None:
     return seconds
 
 
+# Video titles carry upload notes: "Stonehenge [Official music video HD]"
+_VIDEO_NOTES = re.compile(
+    r"\s*[\(\[【]\s*(?:official|music\s+video|m/?v\b|lyrics?\b|audio\b|visuali[sz]er|hd\b|4k\b)"
+    r"[^\)\]】]*[\)\]】]",
+    re.IGNORECASE,
+)
+_ARTIST_DASH_TITLE = re.compile(r"^(?P<artist>.+?)\s+[-–—]\s+(?P<title>.+)$")
+
+
+def _video_variants(title: str, uploader: str) -> tuple[str, list[dict]]:
+    """Read a video title like a person: drop upload notes, and also try
+    "Artist - Title" (uploaded by a label or TV channel)."""
+    title = _VIDEO_NOTES.sub("", title).strip()
+    variants = []
+    if match := _ARTIST_DASH_TITLE.match(title):
+        variants.append(
+            {
+                "name": match.group("title"),
+                "artist": f"{match.group('artist')} {uploader}",
+            }
+        )
+    return title, variants
+
+
 def _track(t: dict) -> dict:
     album = t.get("album")
+    is_song = (
+        t.get("resultType", "song") == "song"
+        or t.get("videoType") == "MUSIC_VIDEO_TYPE_ATV"
+    )
+    name, variants = t["title"], []
+    if t.get("resultType") == "video":
+        name, variants = _video_variants(t["title"], _artists(t.get("artists")))
     return {
         "id": t["videoId"],
-        "name": t["title"],
+        "name": name,
+        "variants": variants,
         "artist": _artists(t.get("artists")),
         "primary_artist": (t.get("artists") or [{"name": ""}])[0]["name"],
         "artist_ids": [a["id"] for a in t.get("artists") or [] if a.get("id")],
         "album": album["name"] if album else "",
         "duration": _seconds(t),
-        "is_song": t.get("resultType", "song") == "song"
-        or t.get("videoType") == "MUSIC_VIDEO_TYPE_ATV",
+        "is_song": is_song,
     }
 
 
@@ -164,11 +196,11 @@ class YTMusicLibrary:
             (f"{track['artist']} {title}", None),
         ]
         seen: dict[str, dict] = {}
-        for query, search_filter in queries:
+        for query_index, (query, search_filter) in enumerate(queries):
             results = self._search(query, filter=search_filter)
             candidates = [
-                _track(r)
-                for r in results
+                {**_track(r), "rank": query_index * len(results) + position}
+                for position, r in enumerate(results)
                 if r.get("resultType", "song") in ("song", "video")
                 and r.get("videoId")
                 and r.get("title")

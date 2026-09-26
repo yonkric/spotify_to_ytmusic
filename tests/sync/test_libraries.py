@@ -314,3 +314,46 @@ class TestYTMusicLengthLookup:
             "duration": 203,
         }
         assert lib.find_track(target).id == "ok"
+
+
+class TestVideoTitles:
+    def _lib(self, results):
+        api = MagicMock()
+        api.search.side_effect = lambda *a, **k: (
+            results if k.get("filter") is None else []
+        )
+        return YTMusicLibrary(api, search_interval=0)
+
+    def test_artist_dash_title_video_is_read_like_a_person_would(self):
+        video = {
+            "resultType": "video",
+            "videoId": "mv",
+            "duration": "3:56",
+            "title": "Ylvis - Stonehenge [Official music video HD]",
+            "artists": [{"name": "TVNorge", "id": "UCtv"}],
+        }
+        target = {"name": "Stonehenge", "artist": "Ylvis", "album": "", "duration": 234}
+        assert self._lib([video]).find_track(target).id == "mv"
+
+    def test_official_video_notes_dropped_for_plain_video_titles(self):
+        video = {
+            "resultType": "video",
+            "videoId": "mv",
+            "duration": "3:56",
+            "title": "Stonehenge (Official Video)",
+            "artists": [{"name": "Ylvis", "id": "UCy"}],
+        }
+        target = {"name": "Stonehenge", "artist": "Ylvis", "album": "", "duration": 234}
+        assert self._lib([video]).find_track(target).id == "mv"
+
+    def test_songs_titles_are_not_split(self):
+        from spotify_to_ytmusic.sync.ytm_library import _track
+
+        song = {
+            "resultType": "song",
+            "videoId": "s",
+            "title": "Help! - Remastered",
+            "artists": [{"name": "The Beatles"}],
+            "duration": "2:18",
+        }
+        assert _track(song)["name"] == "Help! - Remastered"
