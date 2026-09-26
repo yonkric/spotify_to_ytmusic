@@ -6,6 +6,7 @@ from spotify_to_ytmusic.sync.matching import (
     match_artist,
     match_track,
     needs_artist_check,
+    search_title,
 )
 
 SEARCH_LIMIT = 10  # Spotify's maximum for development-mode apps since Feb 2026
@@ -129,7 +130,7 @@ class SpotifyLibrary:
         return self._artist_ids[name]
 
     def find_track(self, track: dict) -> Match:
-        query = f"{track['name']} {track['artist']}"
+        query = f"{search_title(track['name'])} {track['artist']}"
         results = self.api.search(query, limit=SEARCH_LIMIT, type="track")["tracks"][
             "items"
         ]

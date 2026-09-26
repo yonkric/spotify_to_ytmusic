@@ -11,6 +11,7 @@ from spotify_to_ytmusic.sync.matching import (
     match_artist,
     match_track,
     needs_artist_check,
+    search_title,
 )
 
 ALL = 100_000  # ytmusicapi uses an int limit for these endpoints; large enough for any library
@@ -63,6 +64,7 @@ class YTMusicLibrary:
         self.search_interval = search_interval
         self._next_search_at = 0.0
         self._artist_ids: dict[str, frozenset[str]] = {}
+        self._lengths: dict[str, int] = {}
 
     def _search(self, query: str, **kwargs) -> list[dict]:
         now = time.monotonic()
@@ -125,20 +127,41 @@ class YTMusicLibrary:
             )
         return self._artist_ids[name]
 
-    def _match(self, candidates: list[dict], track: dict) -> Match:
+    def _length(self, video_id: str) -> int:
+        if video_id not in self._lengths:
+            details = self.api.get_song(video_id)["videoDetails"]
+            self._lengths[video_id] = int(details["lengthSeconds"])
+        return self._lengths[video_id]
+
+    def _match_once(self, candidates: list[dict], track: dict) -> Match:
         match = match_track(candidates, track)
         if match.id or not needs_artist_check(candidates, track):
             return match
         artist_ids = self.resolve_artist(track.get("primary_artist") or track["artist"])
         return match_track(candidates, track, artist_ids)
 
+    def _match(self, candidates: list[dict], track: dict) -> Match:
+        """Match, but never accept a result whose length wasn't checked: results
+        from the all-results search carry no duration, so look it up first."""
+        candidates = list(candidates)
+        while True:
+            match = self._match_once(candidates, track)
+            chosen = next((c for c in candidates if c["id"] == match.id), None)
+            if chosen is None or chosen["duration"] or not track.get("duration"):
+                return match
+            candidates = [
+                {**c, "duration": self._length(c["id"])} if c is chosen else c
+                for c in candidates
+            ]
+
     def find_track(self, track: dict) -> Match:
         # "songs" results carry durations and artist channel ids; all-results is
         # last, for tracks that only exist as videos
+        title = search_title(track["name"])
         queries = [
-            (f"{track['artist']} {track['name']}", "songs"),
-            (track["name"], "songs"),
-            (f"{track['artist']} {track['name']}", None),
+            (f"{track['artist']} {title}", "songs"),
+            (title, "songs"),
+            (f"{track['artist']} {title}", None),
         ]
         seen: dict[str, dict] = {}
         for query, search_filter in queries:

@@ -385,3 +385,49 @@ class TestNoDurationResults:
             track("Live While We're Young", "One Direction", duration=200, id="ok")
         ]
         assert best_track(candidates, target) == "ok"
+
+
+class TestExplicitMarkers:
+    def test_explicit_version_suffix_is_the_same_song(self):
+        target = track("Seven (feat. Latto)", "Jung Kook Latto", duration=184, id=None)
+        candidates = [
+            track(
+                "Seven - Explicit Ver. (feat. Latto)",
+                "Jung Kook",
+                duration=185,
+                id="ok",
+            )
+        ]
+        assert best_track(candidates, target) == "ok"
+
+    def test_other_explicit_spellings(self):
+        for title in [
+            "Seven (Explicit)",
+            "Seven [Explicit Version]",
+            "Seven - Explicit",
+        ]:
+            assert clean_title(title) == "seven", title
+
+    def test_band_version_is_still_different(self):
+        target = track("Seven (feat. Latto)", "Jung Kook Latto", duration=184, id=None)
+        candidates = [
+            track(
+                "Seven - Band Ver. (feat. Latto)", "Jung Kook", duration=190, id="band"
+            )
+        ]
+        assert best_track(candidates, target) is None
+
+
+class TestOriginalMix:
+    def test_original_mix_is_the_standard_version(self):
+        assert clean_title("Tsunami - Original Mix") == "tsunami"
+        assert clean_title("Tremor (Original Mix)") == "tremor"
+
+    def test_search_title_drops_markers_but_keeps_case(self):
+        from spotify_to_ytmusic.sync.matching import search_title
+
+        assert search_title("Tsunami - Original Mix") == "Tsunami"
+        assert search_title("Seven (feat. Latto)") == "Seven"
+        assert (
+            search_title("なんでもないや - movie ver.") == "なんでもないや - movie ver."
+        )

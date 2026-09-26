@@ -267,3 +267,50 @@ class TestYTMusicSearchFallbacks:
             == "v"
         )
         assert api.search.call_count == 1
+
+
+class TestYTMusicLengthLookup:
+    def _lib(self, results, lengths):
+        api = MagicMock()
+        api.search.side_effect = lambda *a, **k: (
+            results if k.get("filter") is None else []
+        )
+        api.get_song.side_effect = lambda vid: {
+            "videoDetails": {"lengthSeconds": str(lengths[vid])}
+        }
+        return api, YTMusicLibrary(api, search_interval=0)
+
+    def test_result_without_duration_is_checked_before_accepting(self):
+        video = {
+            "resultType": "video",
+            "videoId": "long",
+            "title": "Burning Up (FIRE)",
+            "artists": [{"name": "BTS", "id": "UCbts"}],
+        }
+        api, lib = self._lib([video], {"long": 295})
+        target = {
+            "name": "Burning Up (FIRE)",
+            "artist": "BTS",
+            "album": "",
+            "duration": 203,
+        }
+        result = lib.find_track(target)
+        assert result.id is None
+        assert result.suggestions[0]["reason"] == "length differs by 92s"
+        api.get_song.assert_called_once_with("long")
+
+    def test_confirmed_length_is_accepted(self):
+        video = {
+            "resultType": "video",
+            "videoId": "ok",
+            "title": "Burning Up (FIRE)",
+            "artists": [{"name": "BTS", "id": "UCbts"}],
+        }
+        _, lib = self._lib([video], {"ok": 204})
+        target = {
+            "name": "Burning Up (FIRE)",
+            "artist": "BTS",
+            "album": "",
+            "duration": 203,
+        }
+        assert lib.find_track(target).id == "ok"

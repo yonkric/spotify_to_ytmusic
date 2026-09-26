@@ -34,6 +34,12 @@ _FEATURING = re.compile(
     r"\s*[\(\[](feat\.?|ft\.?|featuring|with)\s[^\)\]]*[\)\]]", re.IGNORECASE
 )
 _REMASTER = re.compile(r"\s+-\s+.*remaster.*$", re.IGNORECASE)
+# Markers for the standard version of a song, which the other service omits:
+# "Seven - Explicit Ver.", "Tsunami - Original Mix", "Tremor (Original Mix)"
+_STANDARD_VERSION = re.compile(
+    r"\s*(?:-\s*|[\(\[])\s*(?:explicit(?:\s+ver(?:sion|\.)?)?|original\s+mix)\s*[\)\]]?",
+    re.IGNORECASE,
+)
 # YouTube Music appends English translations to non-Latin titles: "オレンジ - Orange"
 _TRANSLATION = re.compile(r"^(?P<title>.*[^\x00-\x7f].*?)\s+-\s+[\x00-\x7f]+$")
 # Bracket notes that only say where a song is from: "有点甜 (《萌三国》网游主题曲)",
@@ -70,10 +76,16 @@ def _strip_soundtrack_notes(title: str) -> str:
     return _BRACKET_NOTE.sub(replace, title).strip()
 
 
-def clean_title(title: str) -> str:
+def search_title(title: str) -> str:
+    """Title as a person would search it: no featuring, remaster or
+    standard-version markers."""
     title = _FEATURING.sub("", title)
     title = _REMASTER.sub("", title)
-    return title.strip().lower()
+    return _STANDARD_VERSION.sub("", title).strip()
+
+
+def clean_title(title: str) -> str:
+    return search_title(title).lower()
 
 
 def _similarity(a: str, b: str) -> float:
