@@ -95,10 +95,30 @@ class TestBestArtist:
 
 
 class TestCrossScript:
-    def test_artist_in_other_script_accepted_when_title_and_duration_agree(self):
+    def test_artist_in_other_script_accepted_when_service_confirms_identity(self):
+        target = track("告白氣球", "Jay Chou", duration=215, id=None)
+        candidates = [
+            {
+                **track("告白氣球", "周杰倫", duration=216, id="right"),
+                "artist_ids": ["UCjay"],
+            }
+        ]
+        assert match_track(candidates, target, frozenset({"UCjay"})).id == "right"
+
+    def test_other_script_without_confirmed_identity_rejected(self):
         target = track("告白氣球", "Jay Chou", duration=215, id=None)
         candidates = [track("告白氣球", "周杰倫", duration=216, id="right")]
-        assert best_track(candidates, target) == "right"
+        assert best_track(candidates, target) is None
+
+    def test_same_length_cover_by_other_channel_rejected(self):
+        target = track("演員", "Joker Xue", duration=261, id=None)
+        candidates = [
+            {
+                **track("演員", "吳業坤", duration=263, id="cover"),
+                "artist_ids": ["UCcover"],
+            }
+        ]
+        assert match_track(candidates, target, frozenset({"UCxue"})).id is None
 
     def test_artist_in_other_script_rejected_when_duration_differs(self):
         target = track("告白氣球", "Jay Chou", duration=215, id=None)
@@ -117,12 +137,16 @@ class TestCrossScript:
         ]
         assert best_track(candidates, target) == "right"
 
-    def test_translation_suffix_with_other_script_artist(self):
+    def test_same_script_alias_goes_to_review(self):
+        # "7!!" / "seven oops" is the same band, but two Latin names that share
+        # nothing look exactly like a cover; the user confirms it in review
         target = track("オレンジ", "7!!", duration=350, id=None)
         candidates = [
             track("オレンジ - Orange", "seven oops", duration=351, id="right")
         ]
-        assert best_track(candidates, target) == "right"
+        result = match_track(candidates, target)
+        assert result.id is None
+        assert result.suggestions[0]["id"] == "right"
 
 
 class TestBracketNotes:
@@ -143,10 +167,15 @@ class TestBracketNotes:
         candidates = [track("童話 (演唱會版)", "光良", duration=290, id="live")]
         assert best_track(candidates, target) is None
 
-    def test_five_second_difference_accepted_across_scripts(self):
+    def test_five_second_difference_accepted_for_confirmed_artist(self):
         target = track("只是太愛你", "Hins Cheung", duration=254, id=None)
-        candidates = [track("只是太愛你", "張敬軒", duration=249, id="right")]
-        assert best_track(candidates, target) == "right"
+        candidates = [
+            {
+                **track("只是太愛你", "張敬軒", duration=249, id="right"),
+                "artist_ids": ["UChins"],
+            }
+        ]
+        assert match_track(candidates, target, frozenset({"UChins"})).id == "right"
 
 
 class TestVersionNotesAreKept:
@@ -195,7 +224,7 @@ class TestMatchExplanations:
         assert result.id is None
         reasons = {s["id"]: s["reason"] for s in result.suggestions}
         assert reasons["long"] == "different artist, length differs by 62s"
-        assert reasons["nolen"] == "different artist, no length to confirm"
+        assert reasons["nolen"] == "different artist"
         assert reasons["far"] == "different title"
         # closest titles first
         assert [s["id"] for s in result.suggestions][-1] == "far"
@@ -270,3 +299,56 @@ class TestFalsePositivesFromRealRuns:
         assert (
             best_track([track("Epic Mix", "DJ", duration=626, id="ok")], target) == "ok"
         )
+
+
+class TestSecondAuditFalsePositives:
+    def test_numbers_and_filler_words_dont_make_artists_equal(self):
+        target = track("Want You Back", "5 Seconds of Summer", duration=173, id=None)
+        candidates = [track("I Want You Back", "Jackson 5", duration=173, id="j5")]
+        assert best_track(candidates, target) is None
+
+    def test_same_script_cover_of_same_length_rejected(self):
+        target = track("Some", "BOL4", duration=184, id=None)
+        candidates = [track("Some", "Shin Giwon Piano", duration=184, id="piano")]
+        assert best_track(candidates, target) is None
+
+    def test_traditional_simplified_artist_confirmed_by_identity(self):
+        target = track("他不懂", "張杰", duration=240, id=None)
+        candidates = [
+            {**track("他不懂", "张杰", duration=241, id="ok"), "artist_ids": ["UCzj"]}
+        ]
+        assert match_track(candidates, target, frozenset({"UCzj"})).id == "ok"
+
+
+class TestInstrumentalAndCoverUploads:
+    TARGET = track("なんでもないや - movie ver.", "RADWIMPS", duration=344, id=None)
+
+    def test_same_artist_instrumental_rejected(self):
+        for title in [
+            "なんでもないや (movie ver.) (Instrumental)",
+            "なんでもないや (movie ver.) [Off Vocal]",
+            "なんでもないや (movie ver.) カラオケ",
+            "なんでもないや (movie ver.) - インスト",
+            "なんでもないや【歌ってみた】",
+        ]:
+            candidates = [track(title, "RADWIMPS", duration=344, id="x")]
+            result = match_track(candidates, self.TARGET)
+            assert result.id is None, title
+            assert result.suggestions[0]["reason"] == "instrumental/karaoke/cover", (
+                title
+            )
+
+    def test_instrumental_allowed_when_spotify_track_is_instrumental(self):
+        target = track(
+            "なんでもないや (Instrumental)", "RADWIMPS", duration=344, id=None
+        )
+        candidates = [
+            track("なんでもないや (Instrumental)", "RADWIMPS", duration=344, id="ok")
+        ]
+        assert best_track(candidates, target) == "ok"
+
+    def test_movie_version_is_not_a_cover(self):
+        candidates = [
+            track("なんでもないや (movie ver.)", "RADWIMPS", duration=344, id="ok")
+        ]
+        assert best_track(candidates, self.TARGET) == "ok"

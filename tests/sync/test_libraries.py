@@ -198,14 +198,14 @@ class TestYTMusicSearchFallbacks:
         hit = {
             "resultType": "song",
             "videoId": "v",
-            "title": "童話",
-            "artists": [{"name": "光良"}],
+            "title": "Fairy Tale",
+            "artists": [{"name": "Michael Wong", "id": "UCmw"}],
             "duration": "4:05",
         }
         api.search.side_effect = [[], [hit]]
         lib = YTMusicLibrary(api, search_interval=0)
         target = {
-            "name": "童話",
+            "name": "Fairy Tale",
             "artist": "Michael Wong",
             "album": "",
             "duration": 244,
@@ -215,9 +215,38 @@ class TestYTMusicSearchFallbacks:
         assert [
             (c.args[0], c.kwargs.get("filter")) for c in api.search.call_args_list
         ] == [
-            ("Michael Wong 童話", "songs"),
-            ("童話", "songs"),
+            ("Michael Wong Fairy Tale", "songs"),
+            ("Fairy Tale", "songs"),
         ]
+
+    def test_artist_alias_resolved_once_and_used_to_confirm(self):
+        api = MagicMock()
+        song = {
+            "resultType": "song",
+            "videoId": "v",
+            "title": "童話",
+            "artists": [{"name": "光良", "id": "UCgl"}],
+            "duration": "4:05",
+        }
+        cover = {**song, "videoId": "c", "artists": [{"name": "某人", "id": "UCx"}]}
+        api.search.side_effect = [
+            [cover, song],
+            [{"browseId": "UCgl", "artist": "光良"}],
+        ]
+        lib = YTMusicLibrary(api, search_interval=0)
+        target = {
+            "name": "童話",
+            "artist": "Michael Wong",
+            "primary_artist": "Michael Wong",
+            "album": "",
+            "duration": 244,
+        }
+
+        assert lib.find_track(target).id == "v"
+        assert api.search.call_args_list[1].args == ("Michael Wong",)
+        assert api.search.call_args_list[1].kwargs == {"filter": "artists"}
+        lib.resolve_artist("Michael Wong")
+        assert api.search.call_count == 2  # remembered
 
     def test_stops_at_first_query_with_a_match(self):
         api = MagicMock()

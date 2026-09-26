@@ -10,6 +10,7 @@ from spotify_to_ytmusic.sync.matching import (
     match_album,
     match_artist,
     match_track,
+    needs_artist_check,
 )
 
 ALL = 100_000  # ytmusicapi uses an int limit for these endpoints; large enough for any library
@@ -41,6 +42,8 @@ def _track(t: dict) -> dict:
         "id": t["videoId"],
         "name": t["title"],
         "artist": _artists(t.get("artists")),
+        "primary_artist": (t.get("artists") or [{"name": ""}])[0]["name"],
+        "artist_ids": [a["id"] for a in t.get("artists") or [] if a.get("id")],
         "album": album["name"] if album else "",
         "duration": _seconds(t),
         "is_song": t.get("resultType", "song") == "song"
@@ -59,6 +62,7 @@ class YTMusicLibrary:
         self.api = api
         self.search_interval = search_interval
         self._next_search_at = 0.0
+        self._artist_ids: dict[str, frozenset[str]] = {}
 
     def _search(self, query: str, **kwargs) -> list[dict]:
         now = time.monotonic()
@@ -111,9 +115,26 @@ class YTMusicLibrary:
 
     # ---- search -----------------------------------------------------------
 
+    def resolve_artist(self, name: str) -> frozenset[str]:
+        """Channel id YouTube Music itself gives an artist name (aliases, other
+        scripts: "Jay Chou" -> 周杰倫). Top result only; remembered per run."""
+        if name not in self._artist_ids:
+            results = self._search(name, filter="artists")[:1]
+            self._artist_ids[name] = frozenset(
+                r["browseId"] for r in results if r.get("browseId")
+            )
+        return self._artist_ids[name]
+
+    def _match(self, candidates: list[dict], track: dict) -> Match:
+        match = match_track(candidates, track)
+        if match.id or not needs_artist_check(candidates, track):
+            return match
+        artist_ids = self.resolve_artist(track.get("primary_artist") or track["artist"])
+        return match_track(candidates, track, artist_ids)
+
     def find_track(self, track: dict) -> Match:
-        # "songs" results carry durations (needed to confirm cross-script matches);
-        # all-results is last, for tracks that only exist as videos
+        # "songs" results carry durations and artist channel ids; all-results is
+        # last, for tracks that only exist as videos
         queries = [
             (f"{track['artist']} {track['name']}", "songs"),
             (track["name"], "songs"),
@@ -129,13 +150,13 @@ class YTMusicLibrary:
                 and r.get("videoId")
                 and r.get("title")
             ]
-            match = match_track(candidates, track)
+            match = self._match(candidates, track)
             if match.id:
                 return match
             # keep the first sighting: "songs" results carry durations
             for c in candidates:
                 seen.setdefault(c["id"], c)
-        return match_track(list(seen.values()), track)
+        return self._match(list(seen.values()), track)
 
     def find_album(self, album: dict) -> Match:
         results = self._search(f"{album['artist']} {album['name']}", filter="albums")

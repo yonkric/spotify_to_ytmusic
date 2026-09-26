@@ -3,7 +3,8 @@
 Candidates and targets are plain dicts so both directions (Spotify -> YouTube
 Music and back) share one scorer:
 
-- track:  {"id", "name", "artist", "album", "duration" (seconds|None), "is_song"}
+- track:  {"id", "name", "artist", "album", "duration" (seconds|None), "is_song",
+           "primary_artist", "artist_ids"}
 - album:  {"id", "name", "artist"}
 - artist: {"id", "name"}
 """
@@ -24,11 +25,8 @@ MAX_DURATION_DIFF_SECONDS = 10
 MAX_DURATION_DIFF_RATIO = 0.05
 MIN_SPELLING_SIMILARITY = 0.8
 MAX_SUGGESTIONS = 5
-# Artists often differ only by script (Jay Chou / 周杰倫) and non-Latin titles carry
-# soundtrack notes; an almost identical core title with a near-identical length is
-# then accepted without the artist check
-CROSS_SCRIPT_MIN_TITLE_SIMILARITY = 0.9
-CROSS_SCRIPT_MAX_DURATION_DIFF = 6
+# Soundtrack notes are only ignored in titles when lengths agree this closely
+CORE_TITLE_MAX_DURATION_DIFF = 6
 
 _FEATURING = re.compile(
     r"\s*[\(\[](feat\.?|ft\.?|featuring|with)\s[^\)\]]*[\)\]]", re.IGNORECASE
@@ -46,6 +44,17 @@ _VERSION_MARKERS = re.compile(
     r"伴奏|版|live|现场|現場|演唱会|演唱會|dj|remix|翻唱|cover|钢琴|鋼琴|纯音乐|純音樂|instrumental|倍速",
     re.IGNORECASE,
 )
+
+# Uploads that aren't the vocal original; rejected unless the target title says so too
+_NOT_ORIGINAL = re.compile(
+    r"instrumental|\binst\b|karaoke|off[ -]?vocal|\bcover\b|インスト|カラオケ|"
+    r"オフボーカル|歌ってみた|弾いてみた|伴奏|翻唱|纯音乐|純音樂|伴唱",
+    re.IGNORECASE,
+)
+
+
+def _not_original(candidate: str, target: str) -> bool:
+    return bool(_NOT_ORIGINAL.search(candidate)) and not _NOT_ORIGINAL.search(target)
 
 
 def _strip_soundtrack_notes(title: str) -> str:
@@ -68,8 +77,17 @@ def _similarity(a: str, b: str) -> float:
     return difflib.SequenceMatcher(a=a.lower(), b=b.lower()).ratio()
 
 
+_FILLER_WORDS = {"of", "the", "and", "feat", "ft", "featuring", "with", "x", "vs"}
+
+
 def _words(text: str) -> set[str]:
-    return set(re.findall(r"\w+", text.lower()))
+    """Distinctive name words; numbers and filler ("Jackson 5" / "5 Seconds of
+    Summer") say nothing about being the same artist."""
+    return {
+        w
+        for w in re.findall(r"\w+", text.lower())
+        if not w.isdigit() and w not in _FILLER_WORDS
+    }
 
 
 def _artist_similarity(candidate: str, target: str) -> float:
@@ -120,21 +138,34 @@ def _core_title_similarity(candidate: str, target: str) -> float:
 def _same_length(candidate: float | None, target: float | None) -> bool:
     return (
         bool(candidate and target)
-        and abs(candidate - target) <= CROSS_SCRIPT_MAX_DURATION_DIFF
+        and abs(candidate - target) <= CORE_TITLE_MAX_DURATION_DIFF
     )
 
 
-def _track_score(candidate: dict, target: dict) -> float | None:
-    if _length_differs(candidate.get("duration"), target.get("duration")):
-        return None
+def _artist_verified(candidate: dict, artist_ids: frozenset[str]) -> bool:
+    """The service itself says this is the target's artist (Jay Chou = 周杰倫)."""
+    return bool(artist_ids & set(candidate.get("artist_ids") or ()))
+
+
+def _track_title(candidate: dict, target: dict) -> float:
     title = _title_similarity(candidate["name"], target["name"])
-    artist = _artist_similarity(candidate["artist"], target["artist"])
     if _same_length(candidate.get("duration"), target.get("duration")):
         title = max(title, _core_title_similarity(candidate["name"], target["name"]))
-        strong = title >= CROSS_SCRIPT_MIN_TITLE_SIMILARITY
-    else:
-        strong = False
-    if not strong and (title < MIN_TITLE_SIMILARITY or artist < MIN_ARTIST_SIMILARITY):
+    return title
+
+
+def _track_score(
+    candidate: dict, target: dict, artist_ids: frozenset[str]
+) -> float | None:
+    if _length_differs(candidate.get("duration"), target.get("duration")):
+        return None
+    if _not_original(candidate["name"], target["name"]):
+        return None
+    title = _track_title(candidate, target)
+    artist = _artist_similarity(candidate["artist"], target["artist"])
+    if _artist_verified(candidate, artist_ids):
+        artist = 1.0
+    if title < MIN_TITLE_SIMILARITY or artist < MIN_ARTIST_SIMILARITY:
         return None
 
     weighted = [(title, 2.0), (artist, 1.0)]
@@ -146,6 +177,18 @@ def _track_score(candidate: dict, target: dict) -> float | None:
 
     score = sum(s * w for s, w in weighted) / sum(w for _, w in weighted)
     return score * SONG_BONUS if candidate.get("is_song") else score
+
+
+def needs_artist_check(candidates: list[dict], target: dict) -> bool:
+    """True when some candidate fails only on the artist name, so asking the service
+    who the artist is (aliases, other scripts) could still confirm it."""
+    return any(
+        not _length_differs(c.get("duration"), target.get("duration"))
+        and _track_title(c, target) >= MIN_TITLE_SIMILARITY
+        and _artist_similarity(c["artist"], target["artist"]) < MIN_ARTIST_SIMILARITY
+        and c.get("artist_ids")
+        for c in candidates
+    )
 
 
 @dataclass(frozen=True)
@@ -172,34 +215,32 @@ def _no_match(rejected: list[tuple[float, dict, str]]) -> Match:
     )
 
 
-def _track_rejection(candidate: dict, target: dict) -> str:
-    if _title_similarity(candidate["name"], target["name"]) < MIN_TITLE_SIMILARITY:
+def _track_rejection(candidate: dict, target: dict, artist_ids: frozenset[str]) -> str:
+    if _not_original(candidate["name"], target["name"]):
+        return "instrumental/karaoke/cover"
+    if _track_title(candidate, target) < MIN_TITLE_SIMILARITY:
         return "different title"
+    parts = []
+    if _artist_similarity(
+        candidate["artist"], target["artist"]
+    ) < MIN_ARTIST_SIMILARITY and not _artist_verified(candidate, artist_ids):
+        parts.append("different artist")
     c_len, t_len = candidate.get("duration"), target.get("duration")
-    artist_differs = (
-        _artist_similarity(candidate["artist"], target["artist"])
-        < MIN_ARTIST_SIMILARITY
-    )
-    parts = ["different artist"] if artist_differs else []
     if _length_differs(c_len, t_len):
         parts.append(f"length differs by {round(abs(c_len - t_len))}s")
-    elif artist_differs:
-        if not c_len or not t_len:
-            parts.append("no length to confirm")
-        elif abs(c_len - t_len) > CROSS_SCRIPT_MAX_DURATION_DIFF:
-            parts.append(f"length differs by {round(abs(c_len - t_len))}s")
-        else:
-            parts.append("title not close enough")
     return ", ".join(parts) or "not close enough"
 
 
-def match_track(candidates: list[dict], target: dict) -> Match:
+def match_track(
+    candidates: list[dict], target: dict, artist_ids: frozenset[str] = frozenset()
+) -> Match:
+    """``artist_ids``: the target artist's ids on the candidates' service, when known."""
     scored, rejected = [], []
     for c in candidates:
-        score = _track_score(c, target)
+        score = _track_score(c, target, artist_ids)
         if score is None:
             closeness = _title_similarity(c["name"], target["name"])
-            rejected.append((closeness, c, _track_rejection(c, target)))
+            rejected.append((closeness, c, _track_rejection(c, target, artist_ids)))
         else:
             scored.append((score, c["id"]))
     return Match(max(scored)[1]) if scored else _no_match(rejected)

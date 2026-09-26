@@ -5,6 +5,7 @@ from spotify_to_ytmusic.sync.matching import (
     match_album,
     match_artist,
     match_track,
+    needs_artist_check,
 )
 
 SEARCH_LIMIT = 10  # Spotify's maximum for development-mode apps since Feb 2026
@@ -39,6 +40,8 @@ def _track(t: dict) -> dict:
         "id": t["id"],
         "name": t["name"],
         "artist": _artists(t["artists"]),
+        "primary_artist": t["artists"][0]["name"] if t["artists"] else "",
+        "artist_ids": [a["id"] for a in t["artists"] if a.get("id")],
         "album": t["album"]["name"],
         "duration": t["duration_ms"] / 1000,
         "is_song": True,
@@ -61,6 +64,7 @@ class SpotifyLibrary:
     def __init__(self, api):
         self.api = api
         self._user_id = None
+        self._artist_ids: dict[str, frozenset[str]] = {}
 
     def _all(self, page: dict) -> list[dict]:
         items = list(page["items"])
@@ -116,12 +120,25 @@ class SpotifyLibrary:
 
     # ---- search -----------------------------------------------------------
 
+    def resolve_artist(self, name: str) -> frozenset[str]:
+        """Artist id Spotify itself gives a name (aliases, other scripts:
+        "周杰倫" -> Jay Chou). Top result only; remembered per run."""
+        if name not in self._artist_ids:
+            results = self.api.search(name, limit=1, type="artist")["artists"]["items"]
+            self._artist_ids[name] = frozenset(a["id"] for a in results if a)
+        return self._artist_ids[name]
+
     def find_track(self, track: dict) -> Match:
         query = f"{track['name']} {track['artist']}"
         results = self.api.search(query, limit=SEARCH_LIMIT, type="track")["tracks"][
             "items"
         ]
-        return match_track([_track(t) for t in results if t], track)
+        candidates = [_track(t) for t in results if t]
+        match = match_track(candidates, track)
+        if match.id or not needs_artist_check(candidates, track):
+            return match
+        artist_ids = self.resolve_artist(track.get("primary_artist") or track["artist"])
+        return match_track(candidates, track, artist_ids)
 
     def find_album(self, album: dict) -> Match:
         query = f"{album['name']} {album['artist']}"
