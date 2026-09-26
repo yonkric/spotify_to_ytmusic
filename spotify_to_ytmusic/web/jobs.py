@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from spotify_to_ytmusic.sync.engine import Selection, apply_choices, run_transfer
-from spotify_to_ytmusic.web.auth import MATCH_CACHE_FILE
+from spotify_to_ytmusic.web.auth import MATCH_CACHE_FILE, friendly_error
 
 log = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ class JobRunner:
             job.status, job.message = "done", "Finished"
         except Exception as ex:
             log.error("Transfer %s failed:\n%s", job.id, traceback.format_exc())
-            job.status, job.error = "failed", f"{type(ex).__name__}: {ex}"
+            job.status, job.error = "failed", friendly_error(ex)
         finally:
             _save_cache(cache)
 

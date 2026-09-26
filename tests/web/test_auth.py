@@ -48,3 +48,32 @@ def test_credentials_dir_is_owner_only(tmp_path, monkeypatch):
     monkeypatch.setattr(auth, "CONFIG_FILE", web_dir / "config.json")
     auth.save_config({"spotify_client_id": "x"})
     assert web_dir.stat().st_mode & 0o777 == 0o700
+
+
+def test_spotify_rate_limit_is_explained_not_waited_out():
+    from spotipy.exceptions import SpotifyException
+
+    from spotify_to_ytmusic.web.auth import friendly_error
+
+    ex = SpotifyException(429, -1, "rate limited", headers={"Retry-After": "73602"})
+    message = friendly_error(ex)
+    assert "Spotify is rate-limiting" in message and "about 20 hours" in message
+
+
+def test_other_errors_keep_their_details():
+    from spotify_to_ytmusic.web.auth import friendly_error
+
+    assert friendly_error(RuntimeError("boom")) == "RuntimeError: boom"
+
+
+def test_spotify_client_does_not_retry_429(tmp_path, monkeypatch):
+    from spotify_to_ytmusic.web import auth
+
+    monkeypatch.setattr(auth, "WEB_DIR", tmp_path)
+    monkeypatch.setattr(auth, "SPOTIFY_TOKEN_FILE", tmp_path / "t.json")
+    manager = auth.spotify_auth_manager(
+        "0" * 32, "http://127.0.0.1:8765/callback/spotify"
+    )
+    monkeypatch.setattr(manager, "validate_token", lambda token: {"access_token": "x"})
+    client = auth.spotify_client(manager)
+    assert 429 not in client.status_forcelist

@@ -193,7 +193,7 @@ def create_app() -> FastAPI:
                 request,
                 "_error.html",
                 {
-                    "message": f"Couldn't read your {lib.name} library: {type(ex).__name__}: {ex}"
+                    "message": f"Couldn't read your {lib.name} library: {auth.friendly_error(ex)}"
                 },
             )
         return templates.TemplateResponse(
@@ -297,7 +297,7 @@ def create_app() -> FastAPI:
                 raise HTTPException(400, str(ex)) from None
             except Exception as ex:
                 log.exception("Applying picks for job %s failed", job_id)
-                problems.append(f"Couldn't add your picks: {type(ex).__name__}: {ex}")
+                problems.append(f"Couldn't add your picks: {auth.friendly_error(ex)}")
         return templates.TemplateResponse(
             request, "_job.html", {"job": job, "notice": notice, "problems": problems}
         )

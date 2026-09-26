@@ -7,6 +7,7 @@ from pathlib import Path
 
 import spotipy
 from spotipy import CacheFileHandler
+from spotipy.exceptions import SpotifyException
 from spotipy.oauth2 import SpotifyPKCE
 from ytmusicapi import YTMusic, setup
 
@@ -59,7 +60,27 @@ def spotify_client(auth: SpotifyPKCE) -> spotipy.Spotify | None:
     fall back to an interactive terminal prompt and hang the server."""
     if auth.validate_token(auth.cache_handler.get_cached_token()) is None:
         return None
-    return spotipy.Spotify(auth_manager=auth, retries=3)
+    # no automatic retry on 429: Spotify's Retry-After can be ~20 hours for
+    # development-mode apps, which would silently freeze a transfer
+    return spotipy.Spotify(
+        auth_manager=auth, retries=3, status_forcelist=(500, 502, 503, 504)
+    )
+
+
+def friendly_error(ex: Exception) -> str:
+    """A message the user can act on, keeping details for anything unexpected."""
+    if isinstance(ex, SpotifyException) and ex.http_status == 429:
+        retry_after = int((ex.headers or {}).get("Retry-After", 0))
+        wait = (
+            f"about {round(retry_after / 3600)} hours"
+            if retry_after >= 3600
+            else f"about {max(1, round(retry_after / 60))} minutes"
+        )
+        return (
+            f"Spotify is rate-limiting this app (too many requests today). Try again in "
+            f"{wait}; everything already copied is kept."
+        )
+    return f"{type(ex).__name__}: {ex}"
 
 
 # ---- YouTube Music ----------------------------------------------------------
