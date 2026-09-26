@@ -237,3 +237,10 @@ def test_apply_choices_rejects_ids_that_were_not_offered():
     with pytest.raises(ValueError, match="No unmatched item"):
         apply_choices(dest, report[0], {7: "o1"}, cache)
     assert dest.added["new-Mix"] == []
+
+
+def test_apply_choices_accepts_ids_the_user_pasted():
+    dest, report, cache = _section_with_suggestions()
+    section = apply_choices(dest, report[0], {1: "pasted"}, cache, pasted={1})
+    assert dest.added["new-Mix"] == ["pasted"]
+    assert [nf["label"] for nf in section["not_found"]] == ["A - One"]

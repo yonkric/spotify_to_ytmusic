@@ -242,21 +242,54 @@ def create_app() -> FastAPI:
         job = state.jobs.get(job_id)
         if job is None:
             raise HTTPException(404, "No such job")
-        choices: dict[int, dict[int, str]] = {}
+        picks: dict[tuple[int, int], str] = {}
+        links: dict[tuple[int, int], str] = {}
         for name, value in (await request.form()).multi_items():
-            # fields are "pick-<section>-<item>"; an empty value means "none of these"
+            # "pick-<section>-<item>" (empty = none of these), "link-<section>-<item>"
             parts = name.split("-")
-            if len(parts) != 3 or parts[0] != "pick" or not value:
+            if (
+                len(parts) != 3
+                or parts[0] not in ("pick", "link")
+                or not str(value).strip()
+            ):
                 continue
             try:
-                section, item = int(parts[1]), int(parts[2])
+                key = (int(parts[1]), int(parts[2]))
             except ValueError:
                 raise HTTPException(400, f"Bad field {name!r}") from None
-            choices.setdefault(section, {})[item] = str(value)
+            (picks if parts[0] == "pick" else links)[key] = str(value).strip()
+
+        def ids_from_links() -> tuple[dict, list[str]]:
+            found, problems = {}, []
+            for (section, item), link in links.items():
+                if not (
+                    0 <= section < len(job.report)
+                    and 0 <= item < len(job.report[section]["not_found"])
+                ):
+                    raise HTTPException(400, f"No unmatched item {section}-{item}")
+                label = job.report[section]["not_found"][item]["label"]
+                try:
+                    found[(section, item)] = job.dest.id_from_link(
+                        job.report[section]["kind"], link
+                    )
+                except ValueError as ex:
+                    problems.append(f"{label}: {ex}")
+            return found, problems
+
+        pasted_ids, problems = await run_in_threadpool(ids_from_links)
+        choices: dict[int, dict[int, str]] = {}
+        pasted: dict[int, set[int]] = {}
+        for (section, item), chosen in {**picks, **pasted_ids}.items():  # a link wins
+            choices.setdefault(section, {})[item] = chosen
+        for section, item in pasted_ids:
+            pasted.setdefault(section, set()).add(item)
+
         notice = None
         if choices:
             try:
-                added = await run_in_threadpool(state.jobs.resolve, job, choices)
+                added = await run_in_threadpool(
+                    state.jobs.resolve, job, choices, pasted
+                )
                 notice = (
                     f"Added {added} of your picks and remembered them for next time."
                 )
@@ -264,9 +297,9 @@ def create_app() -> FastAPI:
                 raise HTTPException(400, str(ex)) from None
             except Exception as ex:
                 log.exception("Applying picks for job %s failed", job_id)
-                notice = f"Couldn't add your picks: {type(ex).__name__}: {ex}"
+                problems.append(f"Couldn't add your picks: {type(ex).__name__}: {ex}")
         return templates.TemplateResponse(
-            request, "_job.html", {"job": job, "notice": notice}
+            request, "_job.html", {"job": job, "notice": notice, "problems": problems}
         )
 
     @app.get("/jobs/{job_id}/not-found.txt", response_class=PlainTextResponse)

@@ -102,8 +102,15 @@ class JobRunner:
         finally:
             _save_cache(cache)
 
-    def resolve(self, job: Job, choices: dict[int, dict[int, str]]) -> int:
-        """Apply the user's picks ({section index: {item index: id}}); returns how many."""
+    def resolve(
+        self,
+        job: Job,
+        choices: dict[int, dict[int, str]],
+        pasted: dict[int, set[int]] | None = None,
+    ) -> int:
+        """Apply the user's picks ({section index: {item index: id}}); ``pasted`` marks
+        items whose id came from a link the user pasted. Returns how many."""
+        pasted = pasted or {}
         with self._lock:
             if job.status != "done":
                 raise RuntimeError("Wait for the transfer to finish first.")
@@ -116,7 +123,11 @@ class JobRunner:
             try:
                 for index, picks in choices.items():
                     job.report[index] = apply_choices(
-                        job.dest, job.report[index], picks, cache
+                        job.dest,
+                        job.report[index],
+                        picks,
+                        cache,
+                        pasted.get(index, set()),
                     )
             finally:
                 _save_cache(cache)

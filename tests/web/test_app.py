@@ -194,3 +194,35 @@ def test_switching_accounts_clears_old_review_lists(client, connected, monkeypat
         f"/jobs/{job_id}/resolve", data={"pick-0-0": "g1"}, headers=ORIGIN
     )
     assert response.status_code == 404
+
+
+def test_pasting_a_link_adds_it(client, connected):
+    _, dest = connected
+    dest.id_from_link = lambda kind, link: link.rsplit("=", 1)[1]
+    job_id, page = _finished_job(client)
+    assert 'name="link-0-0"' in page
+    page = client.post(
+        f"/jobs/{job_id}/resolve",
+        data={"pick-0-0": "", "link-0-0": "https://music.youtube.com/watch?v=mine"},
+        headers=ORIGIN,
+    ).text
+    assert "Added 1" in page
+    assert dest.added["new-Road trip"] == ["d1", "mine"]
+
+
+def test_bad_link_is_explained_and_nothing_added(client, connected):
+    _, dest = connected
+
+    def reject(kind, link):
+        raise ValueError("That doesn't look like a YouTube Music link.")
+
+    dest.id_from_link = reject
+    job_id, _ = _finished_job(client)
+    page = client.post(
+        f"/jobs/{job_id}/resolve", data={"link-0-0": "nonsense"}, headers=ORIGIN
+    ).text
+    assert (
+        "doesn&#39;t look like a YouTube Music link" in page
+        or "doesn't look like" in page
+    )
+    assert dest.added["new-Road trip"] == ["d1"]

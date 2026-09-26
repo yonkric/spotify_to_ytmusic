@@ -18,6 +18,7 @@
       {% endfor %}
     </table>
     {% if notice %}<div class="ok">{{ notice }}</div>{% endif %}
+    {% for problem in problems or [] %}<div class="error">{{ problem }}</div>{% endfor %}
     {% set missing = job.report|sum(attribute="not_found", start=[]) %}
     {% if missing %}
       <h2 class="review-title">{{ missing|length }} not found — review</h2>
@@ -45,6 +46,10 @@
                     {% endfor %}
                   </div>
                 {% endif %}
+                <label class="paste">Or paste a {{ job.dest.name }} link:
+                  <input type="text" name="link-{{ si }}-{{ ii }}"
+                         placeholder="{% if job.dest.name == 'Spotify' %}https://open.spotify.com/{{ s.kind }}/…{% else %}https://music.youtube.com/watch?v=…{% endif %}">
+                </label>
               </div>
             {% endfor %}
           {% endif %}

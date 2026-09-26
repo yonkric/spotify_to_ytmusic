@@ -394,3 +394,62 @@ def test_title_only_search_drops_bracket_notes():
     )
     queries = [c.args[0] for c in api.search.call_args_list]
     assert "At a Medium Pace" in queries
+
+
+class TestPastedLinks:
+    def test_youtube_music_link_formats(self):
+        api = MagicMock()
+        api.get_song.return_value = {
+            "playabilityStatus": {"status": "OK"},
+            "videoDetails": {"videoId": "3Bzl2Y5A67k"},
+        }
+        lib = YTMusicLibrary(api, search_interval=0)
+        for link in [
+            "https://music.youtube.com/watch?v=3Bzl2Y5A67k&si=2FW9D-SlGHGxqL2M",
+            "https://www.youtube.com/watch?v=3Bzl2Y5A67k",
+            "https://youtu.be/3Bzl2Y5A67k?si=x",
+            "3Bzl2Y5A67k",
+        ]:
+            assert lib.id_from_link("track", link) == "3Bzl2Y5A67k", link
+
+    def test_youtube_music_album_and_artist_links(self):
+        lib = YTMusicLibrary(MagicMock(), search_interval=0)
+        assert (
+            lib.id_from_link("album", "https://music.youtube.com/browse/MPREb_abc123")
+            == "MPREb_abc123"
+        )
+        assert (
+            lib.id_from_link("artist", "https://music.youtube.com/channel/UCabc_123")
+            == "UCabc_123"
+        )
+
+    def test_bad_or_unavailable_youtube_link(self):
+        api = MagicMock()
+        api.get_song.return_value = {
+            "playabilityStatus": {"status": "ERROR", "reason": "Video unavailable"}
+        }
+        lib = YTMusicLibrary(api, search_interval=0)
+        with pytest.raises(ValueError, match="unavailable"):
+            lib.id_from_link("track", "https://youtu.be/AAAAAAAAAAA")
+        with pytest.raises(ValueError, match="YouTube Music link"):
+            lib.id_from_link("track", "https://open.spotify.com/track/abc")
+
+    def test_spotify_links(self):
+        api = MagicMock()
+        api.track.return_value = {"id": "4uLU6hMCjMI75M1A2tKUQC"}
+        api.album.return_value = {"id": "1DFixLWuPkv3KT3TnV35m3"}
+        lib = SpotifyLibrary(api)
+        assert (
+            lib.id_from_link(
+                "track", "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=x"
+            )
+            == "4uLU6hMCjMI75M1A2tKUQC"
+        )
+        assert (
+            lib.id_from_link(
+                "album", "https://open.spotify.com/intl-de/album/1DFixLWuPkv3KT3TnV35m3"
+            )
+            == "1DFixLWuPkv3KT3TnV35m3"
+        )
+        with pytest.raises(ValueError, match="Spotify track link"):
+            lib.id_from_link("track", "https://music.youtube.com/watch?v=3Bzl2Y5A67k")

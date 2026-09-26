@@ -1,5 +1,7 @@
 """Read and write a Spotify library through the Feb 2026 Web API (spotipy>=2.26)."""
 
+import re
+
 from spotify_to_ytmusic.sync.matching import (
     Match,
     match_album,
@@ -162,6 +164,23 @@ class SpotifyLibrary:
         return match_artist(
             [{"id": a["id"], "name": a["name"]} for a in results if a], artist
         )
+
+    def id_from_link(self, kind: str, link: str) -> str:
+        """Id from a pasted open.spotify.com link or spotify: URI; checks it exists."""
+        match = re.search(
+            rf"(?:open\.spotify\.com/(?:intl-[\w-]+/)?{kind}/|spotify:{kind}:)([A-Za-z0-9]{{22}})",
+            link.strip(),
+        )
+        if not match:
+            raise ValueError(
+                f"That doesn't look like a Spotify {kind} link: {link.strip()}"
+            )
+        lookup = {
+            "track": self.api.track,
+            "album": self.api.album,
+            "artist": self.api.artist,
+        }
+        return lookup[kind](match.group(1))["id"]
 
     @staticmethod
     def url(kind: str, item_id: str) -> str:

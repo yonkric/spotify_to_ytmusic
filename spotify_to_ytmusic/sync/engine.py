@@ -173,18 +173,24 @@ def _write_chosen(dest, target: dict, ids: list[str]) -> list[str]:
 
 
 def apply_choices(
-    dest, section: dict, choices: dict[int, str], cache: MutableMapping
+    dest,
+    section: dict,
+    choices: dict[int, str],
+    cache: MutableMapping,
+    pasted: set[int] = frozenset(),
 ) -> dict:
     """Add the suggestions the user picked for unmatched items of one report section.
 
     ``choices`` maps an index into ``section["not_found"]`` to a suggested id. Only ids
-    that were actually offered for that item are accepted. Returns the updated section.
+    that were actually offered for that item are accepted, except for indexes in
+    ``pasted``: ids from links the user pasted (already checked by the library).
+    Returns the updated section.
     """
     for index, chosen in choices.items():
         if not 0 <= index < len(section["not_found"]):
             raise ValueError(f"No unmatched item #{index} in {section['label']}")
         offered = {s["id"] for s in section["not_found"][index]["suggestions"]}
-        if chosen not in offered:
+        if index not in pasted and chosen not in offered:
             raise ValueError(
                 f"'{chosen}' was not offered for {section['not_found'][index]['label']}"
             )

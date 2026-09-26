@@ -231,6 +231,28 @@ class YTMusicLibrary:
             [{"id": r["browseId"], "name": r["artist"]} for r in results], artist
         )
 
+    _LINK_PATTERNS = {
+        "track": re.compile(r"(?:[?&]v=|youtu\.be/|^)([\w-]{11})(?:[&?#]|$)"),
+        "album": re.compile(r"browse/(MPRE[\w-]+)"),
+        "artist": re.compile(r"channel/(UC[\w-]+)"),
+    }
+
+    def id_from_link(self, kind: str, link: str) -> str:
+        """Id from a pasted YouTube Music / YouTube link; checks the song exists."""
+        match = self._LINK_PATTERNS[kind].search(link.strip())
+        if not match:
+            raise ValueError(
+                f"That doesn't look like a YouTube Music link for a {kind}: {link.strip()}"
+            )
+        item_id = match.group(1)
+        if kind == "track":
+            status = self.api.get_song(item_id).get("playabilityStatus", {})
+            if status.get("status") != "OK":
+                raise ValueError(
+                    f"That YouTube video is unavailable ({status.get('reason', 'unknown')})"
+                )
+        return item_id
+
     @staticmethod
     def url(kind: str, item_id: str) -> str:
         path = {"track": "watch?v=", "album": "browse/", "artist": "channel/"}[kind]
