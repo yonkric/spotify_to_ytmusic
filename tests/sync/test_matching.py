@@ -144,3 +144,31 @@ class TestBracketNotes:
         target = track("只是太愛你", "Hins Cheung", duration=254, id=None)
         candidates = [track("只是太愛你", "張敬軒", duration=249, id="right")]
         assert best_track(candidates, target) == "right"
+
+
+class TestVersionNotesAreKept:
+    """Only soundtrack notes are ignored; notes that mark another recording are not."""
+
+    TARGET = track("有点甜", "Silence Wang BY2", duration=235, id=None)
+
+    def test_instrumental_with_same_length_rejected(self):
+        candidates = [track("有点甜 (伴奏)", "汪苏泷", duration=235, id="karaoke")]
+        assert best_track(candidates, self.TARGET) is None
+
+    def test_other_version_with_same_length_rejected(self):
+        for note in ["(DJ版)", "（女生版）", "(演唱會版)", "(翻唱)", "(钢琴曲)"]:
+            candidates = [track(f"有点甜 {note}", "汪苏泷", duration=235, id="v")]
+            assert best_track(candidates, self.TARGET) is None, note
+
+    def test_soundtrack_note_that_also_says_version_rejected(self):
+        candidates = [
+            track("有点甜 (电视剧插曲 伴奏版)", "汪苏泷", duration=235, id="v")
+        ]
+        assert best_track(candidates, self.TARGET) is None
+
+    def test_prefers_original_over_instrumental(self):
+        candidates = [
+            track("有点甜 (伴奏)", "汪苏泷 BY2", duration=235, id="karaoke"),
+            track("有点甜", "汪苏泷 BY2", duration=235, id="original"),
+        ]
+        assert best_track(candidates, self.TARGET) == "original"

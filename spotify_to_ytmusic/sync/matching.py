@@ -29,8 +29,26 @@ _FEATURING = re.compile(
 _REMASTER = re.compile(r"\s+-\s+.*remaster.*$", re.IGNORECASE)
 # YouTube Music appends English translations to non-Latin titles: "オレンジ - Orange"
 _TRANSLATION = re.compile(r"^(?P<title>.*[^\x00-\x7f].*?)\s+-\s+[\x00-\x7f]+$")
-# Non-Latin bracket notes: "有点甜 (《萌三国》网游主题曲)", "體面（電影《前任3》插曲）"
-_NON_LATIN_NOTE = re.compile(r"\s*[\(（][^\)）]*[^\x00-\x7f][^\)）]*[\)）]")
+# Bracket notes that only say where a song is from: "有点甜 (《萌三国》网游主题曲)",
+# "體面（電影《前任3》插曲）". Notes marking another recording are never ignored.
+_BRACKET_NOTE = re.compile(r"\s*[\(（][^\)）]*[\)）]")
+_SOUNDTRACK_MARKERS = re.compile(
+    r"主题曲|主題曲|插曲|片尾曲|片头曲|片頭曲|电视剧|電視劇|电影|電影|《"
+)
+_VERSION_MARKERS = re.compile(
+    r"伴奏|版|live|现场|現場|演唱会|演唱會|dj|remix|翻唱|cover|钢琴|鋼琴|纯音乐|純音樂|instrumental|倍速",
+    re.IGNORECASE,
+)
+
+
+def _strip_soundtrack_notes(title: str) -> str:
+    def replace(note: re.Match) -> str:
+        text = note.group(0)
+        if _SOUNDTRACK_MARKERS.search(text) and not _VERSION_MARKERS.search(text):
+            return ""
+        return text
+
+    return _BRACKET_NOTE.sub(replace, title).strip()
 
 
 def clean_title(title: str) -> str:
@@ -65,10 +83,10 @@ def _title_similarity(candidate: str, target: str) -> float:
 
 
 def _core_title_similarity(candidate: str, target: str) -> float:
-    """Title similarity with non-Latin bracket notes removed from both sides."""
+    """Title similarity with soundtrack notes removed from both sides."""
     return _similarity(
-        _NON_LATIN_NOTE.sub("", clean_title(candidate)).strip(),
-        _NON_LATIN_NOTE.sub("", clean_title(target)).strip(),
+        _strip_soundtrack_notes(clean_title(candidate)),
+        _strip_soundtrack_notes(clean_title(target)),
     )
 
 
